@@ -10,12 +10,35 @@
         }
     }
     function switchView(tabName) {
-        document.querySelectorAll('.nav-item').forEach((item) => {
-            item.classList.toggle('active', item.getAttribute('data-tab') === tabName);
-        });
-        document.querySelectorAll('.tab-pane').forEach((pane) => {
-            pane.classList.toggle('active', pane.id === `${tabName}Tab`);
-        });
+        const isThemes = tabName === 'themes';
+        const viewGeneral = document.getElementById('viewGeneral');
+        const viewThemes = document.getElementById('viewThemes');
+        const tabBtnGeneral = document.getElementById('tabBtnGeneral');
+        const tabBtnThemes = document.getElementById('tabBtnThemes');
+        const headerTitle = document.getElementById('headerTitle');
+        const headerSubtitle = document.getElementById('headerSubtitle');
+        const headerIconGeneral = document.getElementById('headerIconGeneral');
+        const headerIconThemes = document.getElementById('headerIconThemes');
+        if (viewGeneral)
+            viewGeneral.classList.toggle('active', !isThemes);
+        if (viewThemes)
+            viewThemes.classList.toggle('active', isThemes);
+        if (tabBtnGeneral)
+            tabBtnGeneral.classList.toggle('active', !isThemes);
+        if (tabBtnThemes)
+            tabBtnThemes.classList.toggle('active', isThemes);
+        if (headerTitle) {
+            headerTitle.textContent = isThemes ? 'Themes & Appearance' : 'Settings';
+        }
+        if (headerSubtitle) {
+            headerSubtitle.textContent = isThemes
+                ? 'Customize browser themes, accent highlights, and web page contrast'
+                : 'Manage browser preferences, search, and system settings';
+        }
+        if (headerIconGeneral)
+            headerIconGeneral.style.display = isThemes ? 'none' : 'block';
+        if (headerIconThemes)
+            headerIconThemes.style.display = isThemes ? 'block' : 'none';
     }
     function selectTheme(themeId) {
         document.querySelectorAll('.theme-card').forEach((c) => {
@@ -31,6 +54,12 @@
         document.documentElement.style.setProperty('--accent-primary', color);
         document.documentElement.style.setProperty('--border-focus', color);
         sendIpc({ type: 'SetAccentColor', color: color });
+    }
+    function changeSearchEngine(engine) {
+        sendIpc({ type: 'SetSearchEngine', engine: engine });
+    }
+    function toggleBookmarksBar(show) {
+        sendIpc({ type: 'SetShowBookmarksBar', show: show });
     }
     function toggleDarkReader(enabled) {
         sendIpc({
@@ -73,15 +102,23 @@
             }
         }
     };
-    // Event Listeners
+    // Expose global methods for inline HTML onclick attributes
+    window.switchView = switchView;
+    window.selectTheme = selectTheme;
+    window.selectAccent = selectAccent;
+    window.changeSearchEngine = changeSearchEngine;
+    window.toggleBookmarksBar = toggleBookmarksBar;
+    window.toggleDarkReader = toggleDarkReader;
+    // DOM Event Listeners
     document.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('.nav-item').forEach((item) => {
-            item.addEventListener('click', () => {
-                const tab = item.getAttribute('data-tab');
-                if (tab)
-                    switchView(tab);
-            });
-        });
+        const tabBtnGeneral = document.getElementById('tabBtnGeneral');
+        if (tabBtnGeneral) {
+            tabBtnGeneral.addEventListener('click', () => switchView('general'));
+        }
+        const tabBtnThemes = document.getElementById('tabBtnThemes');
+        if (tabBtnThemes) {
+            tabBtnThemes.addEventListener('click', () => switchView('themes'));
+        }
         document.querySelectorAll('.theme-card').forEach((card) => {
             card.addEventListener('click', () => {
                 const theme = card.getAttribute('data-theme');
@@ -100,14 +137,14 @@
         if (searchSelect) {
             searchSelect.addEventListener('change', (e) => {
                 const target = e.target;
-                sendIpc({ type: 'SetSearchEngine', engine: target.value });
+                changeSearchEngine(target.value);
             });
         }
         const bmToggle = document.getElementById('showBookmarksToggle');
         if (bmToggle) {
             bmToggle.addEventListener('change', (e) => {
                 const target = e.target;
-                sendIpc({ type: 'SetShowBookmarksBar', show: target.checked });
+                toggleBookmarksBar(target.checked);
             });
         }
         const drToggle = document.getElementById('darkReaderToggle');
@@ -118,9 +155,4 @@
             });
         }
     });
-    // Global methods for inline callers
-    window.switchView = switchView;
-    window.selectTheme = selectTheme;
-    window.selectAccent = selectAccent;
-    window.toggleDarkReader = toggleDarkReader;
 })();

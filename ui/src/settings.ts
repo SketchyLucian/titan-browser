@@ -10,13 +10,31 @@
   }
 
   function switchView(tabName: string) {
-    document.querySelectorAll('.nav-item').forEach((item) => {
-      item.classList.toggle('active', item.getAttribute('data-tab') === tabName);
-    });
+    const isThemes = tabName === 'themes';
+    const viewGeneral = document.getElementById('viewGeneral');
+    const viewThemes = document.getElementById('viewThemes');
+    const tabBtnGeneral = document.getElementById('tabBtnGeneral');
+    const tabBtnThemes = document.getElementById('tabBtnThemes');
+    const headerTitle = document.getElementById('headerTitle');
+    const headerSubtitle = document.getElementById('headerSubtitle');
+    const headerIconGeneral = document.getElementById('headerIconGeneral');
+    const headerIconThemes = document.getElementById('headerIconThemes');
 
-    document.querySelectorAll('.tab-pane').forEach((pane) => {
-      pane.classList.toggle('active', pane.id === `${tabName}Tab`);
-    });
+    if (viewGeneral) viewGeneral.classList.toggle('active', !isThemes);
+    if (viewThemes) viewThemes.classList.toggle('active', isThemes);
+    if (tabBtnGeneral) tabBtnGeneral.classList.toggle('active', !isThemes);
+    if (tabBtnThemes) tabBtnThemes.classList.toggle('active', isThemes);
+
+    if (headerTitle) {
+      headerTitle.textContent = isThemes ? 'Themes & Appearance' : 'Settings';
+    }
+    if (headerSubtitle) {
+      headerSubtitle.textContent = isThemes
+        ? 'Customize browser themes, accent highlights, and web page contrast'
+        : 'Manage browser preferences, search, and system settings';
+    }
+    if (headerIconGeneral) headerIconGeneral.style.display = isThemes ? 'none' : 'block';
+    if (headerIconThemes) headerIconThemes.style.display = isThemes ? 'block' : 'none';
   }
 
   function selectTheme(themeId: string) {
@@ -34,6 +52,14 @@
     document.documentElement.style.setProperty('--accent-primary', color);
     document.documentElement.style.setProperty('--border-focus', color);
     sendIpc({ type: 'SetAccentColor', color: color });
+  }
+
+  function changeSearchEngine(engine: string) {
+    sendIpc({ type: 'SetSearchEngine', engine: engine });
+  }
+
+  function toggleBookmarksBar(show: boolean) {
+    sendIpc({ type: 'SetShowBookmarksBar', show: show });
   }
 
   function toggleDarkReader(enabled: boolean) {
@@ -82,14 +108,25 @@
     }
   };
 
-  // Event Listeners
+  // Expose global methods for inline HTML onclick attributes
+  (window as unknown as Record<string, unknown>).switchView = switchView;
+  (window as unknown as Record<string, unknown>).selectTheme = selectTheme;
+  (window as unknown as Record<string, unknown>).selectAccent = selectAccent;
+  (window as unknown as Record<string, unknown>).changeSearchEngine = changeSearchEngine;
+  (window as unknown as Record<string, unknown>).toggleBookmarksBar = toggleBookmarksBar;
+  (window as unknown as Record<string, unknown>).toggleDarkReader = toggleDarkReader;
+
+  // DOM Event Listeners
   document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('.nav-item').forEach((item) => {
-      item.addEventListener('click', () => {
-        const tab = item.getAttribute('data-tab');
-        if (tab) switchView(tab);
-      });
-    });
+    const tabBtnGeneral = document.getElementById('tabBtnGeneral');
+    if (tabBtnGeneral) {
+      tabBtnGeneral.addEventListener('click', () => switchView('general'));
+    }
+
+    const tabBtnThemes = document.getElementById('tabBtnThemes');
+    if (tabBtnThemes) {
+      tabBtnThemes.addEventListener('click', () => switchView('themes'));
+    }
 
     document.querySelectorAll('.theme-card').forEach((card) => {
       card.addEventListener('click', () => {
@@ -109,7 +146,7 @@
     if (searchSelect) {
       searchSelect.addEventListener('change', (e) => {
         const target = e.target as HTMLSelectElement;
-        sendIpc({ type: 'SetSearchEngine', engine: target.value });
+        changeSearchEngine(target.value);
       });
     }
 
@@ -117,7 +154,7 @@
     if (bmToggle) {
       bmToggle.addEventListener('change', (e) => {
         const target = e.target as HTMLInputElement;
-        sendIpc({ type: 'SetShowBookmarksBar', show: target.checked });
+        toggleBookmarksBar(target.checked);
       });
     }
 
@@ -129,10 +166,4 @@
       });
     }
   });
-
-  // Global methods for inline callers
-  window.switchView = switchView;
-  window.selectTheme = selectTheme;
-  window.selectAccent = selectAccent;
-  window.toggleDarkReader = toggleDarkReader;
 })();
