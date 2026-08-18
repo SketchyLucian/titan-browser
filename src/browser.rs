@@ -110,7 +110,7 @@ impl BrowserManager {
     pub fn get_chrome_html() -> String {
         let html = include_str!("../ui/index.html");
         let css = include_str!("../ui/style.css");
-        let js = include_str!("../ui/app.js");
+        let js = include_str!("../ui/dist/app.js");
 
         html.replace(
             "<link rel=\"stylesheet\" href=\"style.css\" />",

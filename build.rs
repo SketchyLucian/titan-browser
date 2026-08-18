@@ -31,6 +31,10 @@ fn main() {
     res.compile().expect("Failed to compile Windows resource with icon");
     println!("cargo:rerun-if-changed=assets/icon.ico");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=ui/src/app.ts");
+    println!("cargo:rerun-if-changed=ui/src/types.d.ts");
+    println!("cargo:rerun-if-changed=ui/index.html");
+    println!("cargo:rerun-if-changed=ui/style.css");
 }
 
 #[cfg(not(windows))]

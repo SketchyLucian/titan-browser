@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "None",
+    "outDir": "./ui/dist",
+    "rootDir": "./ui/src",
+    "strict": true,
+    "noEmitOnError": true,
+    "skipLibCheck": true,
+    "isolatedModules": false
+  },
+  "include": ["ui/src/**/*"]
+}
