@@ -199,8 +199,21 @@ impl BrowserManager {
             (function() {{
                 const isLight = {is_light};
                 const forceAdaptation = {force_adaptation};
+                const host = (window.location.hostname || '').toLowerCase();
+                const href = (window.location.href || '').toLowerCase();
 
-                // 1. Emulate prefers-color-scheme media queries for JS-driven sites (YouTube, GitHub, Google, Reddit, etc.)
+                // 1. Clean up any previous forced styles if adaptation is off
+                try {{
+                    const preCanvas = document.getElementById('titan-pre-dark-canvas');
+                    if (preCanvas) preCanvas.remove();
+                    const adaptStyle = document.getElementById('titan-theme-adaptation-style');
+                    if (!forceAdaptation && adaptStyle) adaptStyle.remove();
+                }} catch(e) {{}}
+
+                // If on internal / blank URL, stop here
+                if (!host || href.startsWith('titan://') || href.startsWith('about:')) return;
+
+                // 2. Standard prefers-color-scheme media query patching for JS-driven sites
                 try {{
                     window._titanIsLight = isLight;
                     if (!window._titanMatchMediaPatched) {{
@@ -238,177 +251,42 @@ impl BrowserManager {
                     }}
                 }} catch(e) {{}}
 
-                // 2. Set color-scheme meta tag & instant root dark canvas
-                try {{
-                    const applyDarkPre = () => {{
-                        try {{
-                            if (!isLight) {{
-                                if (document.documentElement) {{
-                                    document.documentElement.style.backgroundColor = '#121318';
-                                    document.documentElement.style.colorScheme = 'dark';
-                                    if (!document.getElementById('titan-pre-dark-canvas')) {{
-                                        const preStyle = document.createElement('style');
-                                        preStyle.id = 'titan-pre-dark-canvas';
-                                        preStyle.textContent = 'html, body {{ background-color: #121318 !important; color-scheme: dark !important; }}';
-                                        (document.head || document.documentElement).appendChild(preStyle);
-                                    }}
-                                }}
-                            }}
-                            if (document.head) {{
-                                let meta = document.querySelector('meta[name="color-scheme"]');
-                                if (!meta) {{
-                                    meta = document.createElement('meta');
-                                    meta.name = 'color-scheme';
-                                    meta.content = isLight ? 'light' : 'dark';
-                                    document.head.appendChild(meta);
-                                }}
-                            }}
-                        }} catch(e) {{}}
-                    }};
-
-                    applyDarkPre();
-                    if (document.readyState === 'loading') {{
-                        document.addEventListener('DOMContentLoaded', applyDarkPre, {{ once: true }});
-                    }}
-                    if (typeof MutationObserver !== 'undefined') {{
-                        const obs = new MutationObserver(() => {{
-                            applyDarkPre();
-                            if (document.head && document.documentElement) {{
-                                obs.disconnect();
-                            }}
-                        }});
-                        obs.observe(document, {{ childList: true, subtree: true }});
-                    }}
-                }} catch(e) {{}}
-
-                const host = (window.location.hostname || '').toLowerCase();
-                const href = (window.location.href || '').toLowerCase();
-
-                // If on internal / blank URL, do not execute page-level mutations
-                if (!host || href.startsWith('titan://') || href.startsWith('about:')) return;
-
-                // 3. Framework Theme Classes & LocalStorage (Tauri, VitePress, Docusaurus, Tailwind, GitHub, Next.js, Starlight, Astro)
-                try {{
-                    const html = document.documentElement;
-                    const body = document.body;
-                    const targetMode = isLight ? 'light' : 'dark';
-                    const removeMode = isLight ? 'dark' : 'light';
-
-                    if (html) {{
-                        if (html.classList.contains('dark') || html.classList.contains('light') || host.includes('tauri.app') || host.includes('vitepress') || host.includes('docusaurus')) {{
-                            html.classList.remove(removeMode);
-                            html.classList.add(targetMode);
-                        }}
-                        if (html.hasAttribute('data-theme')) html.setAttribute('data-theme', targetMode);
-                        if (html.hasAttribute('data-color-mode')) html.setAttribute('data-color-mode', targetMode);
-                    }}
-
-                    if (body) {{
-                        if (body.classList.contains('dark') || body.classList.contains('light')) {{
-                            body.classList.remove(removeMode);
-                            body.classList.add(targetMode);
-                        }}
-                        if (body.hasAttribute('data-theme')) body.setAttribute('data-theme', targetMode);
-                    }}
-
-                    // Synchronize theme storage keys used by modern documentation & UI frameworks
-                    const themeKeys = [
-                        'theme',
-                        'color-theme',
-                        'color-mode',
-                        'vitepress-theme-appearance',
-                        'docusaurus.theme',
-                        'starlight-theme',
-                        'astro-theme',
-                        'tailwind-theme',
-                        'next-themes-theme',
-                        'theme-preference'
-                    ];
-                    themeKeys.forEach(k => {{
-                        try {{
-                            if (localStorage.getItem(k) !== null) {{
-                                localStorage.setItem(k, targetMode);
-                            }}
-                        }} catch(e) {{}}
-                    }});
-                }} catch(e) {{}}
-
-                // 4. YouTube specific cookie & attribute handling
+                // 3. YouTube specific attribute
                 const isYouTube = host.includes('youtube.com') || host.includes('youtu.be');
                 if (isYouTube) {{
-                    if (isLight) {{
-                        document.documentElement.removeAttribute('dark');
-                        try {{
-                            if (document.cookie.includes('f6=400')) {{
-                                document.cookie = "PREF=f6=00000000; domain=.youtube.com; path=/";
-                            }}
-                        }} catch(e) {{}}
-                    }} else {{
-                        document.documentElement.setAttribute('dark', 'true');
-                    }}
+                    try {{
+                        if (isLight) {{
+                            document.documentElement.removeAttribute('dark');
+                        }} else {{
+                            document.documentElement.setAttribute('dark', 'true');
+                        }}
+                    }} catch(e) {{}}
                 }}
 
-                // 5. Adapt pages that do not natively support the selected theme
-                function adaptTheme() {{
-                    if (!host || href.startsWith('titan://') || href.startsWith('about:')) return;
+                // 4. ONLY if Universal Webpage Theme Adaptation is explicitly ENABLED
+                if (forceAdaptation) {{
+                    function adaptTheme() {{
+                        const isNativelyAdaptive = host.includes('google.') || host.includes('youtube.com') || host.includes('youtu.be') || host.includes('github.com') || host.includes('gitlab.com') || host.includes('reddit.com') || host.includes('duckduckgo.com') || host.includes('bing.com') || host.includes('x.com') || host.includes('twitter.com');
+                        if (isNativelyAdaptive) return;
 
-                    const isNativelyAdaptive = host.includes('google.') || host.includes('youtube.com') || host.includes('youtu.be') || host.includes('github.com') || host.includes('gitlab.com') || host.includes('reddit.com') || host.includes('duckduckgo.com') || host.includes('bing.com') || host.includes('wikipedia.org') || host.includes('stackoverflow.com') || host.includes('x.com') || host.includes('twitter.com') || host.includes('tauri.app') || host.includes('vitepress') || host.includes('docusaurus');
-
-                    let el = document.getElementById('titan-theme-adaptation-style');
-
-                    if (isNativelyAdaptive || !forceAdaptation) {{
-                        if (el) el.remove();
-                        return;
-                    }}
-
-                    function getLum(elem) {{
-                        try {{
-                            const bg = window.getComputedStyle(elem).backgroundColor;
-                            const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-                            if (!match) return isLight ? 1 : 0;
-                            const r = parseInt(match[1], 10);
-                            const g = parseInt(match[2], 10);
-                            const b = parseInt(match[3], 10);
-                            return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-                        }} catch(e) {{
-                            return isLight ? 1 : 0;
-                        }}
-                    }}
-
-                    const docLum = document.documentElement ? getLum(document.documentElement) : (isLight ? 1 : 0);
-                    const bodyLum = document.body ? getLum(document.body) : (isLight ? 1 : 0);
-
-                    if (isLight) {{
-                        const isDarkOnly = (docLum < 0.35 || bodyLum < 0.35);
-                        if (isDarkOnly) {{
-                            if (!el) {{
-                                el = document.createElement('style');
-                                el.id = 'titan-theme-adaptation-style';
-                                el.textContent = 'html {{ filter: invert(90%) hue-rotate(180deg) !important; background: #fff !important; }} img, video, iframe, canvas, svg, [style*="background-image"], .html5-video-player {{ filter: invert(100%) hue-rotate(180deg) !important; }}';
-                                document.documentElement.appendChild(el);
-                            }}
-                        }} else {{
-                            if (el) el.remove();
-                        }}
-                    }} else {{
-                        const isBrightOnly = (docLum >= 0.35 && bodyLum >= 0.35);
-                        if (isBrightOnly) {{
+                        let el = document.getElementById('titan-theme-adaptation-style');
+                        if (!isLight) {{
                             if (!el) {{
                                 el = document.createElement('style');
                                 el.id = 'titan-theme-adaptation-style';
                                 el.textContent = 'html {{ filter: invert(90%) hue-rotate(180deg) !important; background: #111 !important; }} img, video, iframe, canvas, svg, [style*="background-image"], .html5-video-player {{ filter: invert(100%) hue-rotate(180deg) !important; }}';
-                                document.documentElement.appendChild(el);
+                                (document.head || document.documentElement).appendChild(el);
                             }}
                         }} else {{
                             if (el) el.remove();
                         }}
                     }}
-                }}
 
-                if (document.readyState === 'complete') {{
-                    adaptTheme();
-                }} else {{
-                    window.addEventListener('load', adaptTheme, {{ once: true }});
+                    if (document.readyState === 'complete') {{
+                        adaptTheme();
+                    }} else {{
+                        window.addEventListener('load', adaptTheme, {{ once: true }});
+                    }}
                 }}
             }})();
             "#,
