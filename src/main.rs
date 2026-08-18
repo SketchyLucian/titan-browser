@@ -22,6 +22,10 @@ fn main() {
     let webview_data_dir = get_app_data_dir().join("webview_profile");
     let _ = std::fs::create_dir_all(&webview_data_dir);
     std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_data_dir);
+    std::env::set_var(
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        "--disable-features=CalculateNativeWinOcclusion",
+    );
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();

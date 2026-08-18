@@ -76,6 +76,10 @@ impl BrowserManager {
     }
 
     pub fn init(&mut self) {
+        let (r, g, b, a) = self.get_theme_background_color();
+        #[cfg(target_os = "windows")]
+        crate::drag_util::apply_dark_window_attributes(&self.window, (r, g, b));
+
         let (width, _) = self.window_size;
         let header_height = self.get_header_height();
         let header_bounds = Rect {
@@ -86,11 +90,10 @@ impl BrowserManager {
         let proxy_clone = self.proxy.clone();
         let html_content = Self::get_chrome_html();
 
-        let bg_color = self.get_theme_background_color();
         let header = WebViewBuilder::new()
             .with_bounds(header_bounds)
-            .with_background_color(bg_color)
-            .with_transparent(true)
+            .with_background_color((r, g, b, a))
+            .with_transparent(false)
             .with_html(&html_content)
             .with_ipc_handler(move |req| {
                 let _ = proxy_clone.send_event(UserEvent::Ipc(req.body().clone()));
@@ -237,25 +240,44 @@ impl BrowserManager {
 
                 // 2. Set color-scheme meta tag & instant root dark canvas
                 try {{
-                    let meta = document.querySelector('meta[name="color-scheme"]');
-                    if (!meta) {{
-                        meta = document.createElement('meta');
-                        meta.name = 'color-scheme';
-                        meta.content = isLight ? 'light' : 'dark';
-                        if (document.head) document.head.appendChild(meta);
-                    }} else {{
-                        meta.content = isLight ? 'light' : 'dark';
-                    }}
+                    const applyDarkPre = () => {{
+                        try {{
+                            if (!isLight) {{
+                                if (document.documentElement) {{
+                                    document.documentElement.style.backgroundColor = '#121318';
+                                    document.documentElement.style.colorScheme = 'dark';
+                                    if (!document.getElementById('titan-pre-dark-canvas')) {{
+                                        const preStyle = document.createElement('style');
+                                        preStyle.id = 'titan-pre-dark-canvas';
+                                        preStyle.textContent = 'html, body {{ background-color: #121318 !important; color-scheme: dark !important; }}';
+                                        (document.head || document.documentElement).appendChild(preStyle);
+                                    }}
+                                }}
+                            }}
+                            if (document.head) {{
+                                let meta = document.querySelector('meta[name="color-scheme"]');
+                                if (!meta) {{
+                                    meta = document.createElement('meta');
+                                    meta.name = 'color-scheme';
+                                    meta.content = isLight ? 'light' : 'dark';
+                                    document.head.appendChild(meta);
+                                }}
+                            }}
+                        }} catch(e) {{}}
+                    }};
 
-                    if (!isLight && !document.getElementById('titan-pre-dark-canvas')) {{
-                        const preStyle = document.createElement('style');
-                        preStyle.id = 'titan-pre-dark-canvas';
-                        preStyle.textContent = 'html, body {{ background-color: #121318 !important; color-scheme: dark !important; }}';
-                        if (document.documentElement) {{
-                            document.documentElement.appendChild(preStyle);
-                        }} else if (document.head) {{
-                            document.head.appendChild(preStyle);
-                        }}
+                    applyDarkPre();
+                    if (document.readyState === 'loading') {{
+                        document.addEventListener('DOMContentLoaded', applyDarkPre, {{ once: true }});
+                    }}
+                    if (typeof MutationObserver !== 'undefined') {{
+                        const obs = new MutationObserver(() => {{
+                            applyDarkPre();
+                            if (document.head && document.documentElement) {{
+                                obs.disconnect();
+                            }}
+                        }});
+                        obs.observe(document, {{ childList: true, subtree: true }});
                     }}
                 }} catch(e) {{}}
 
@@ -468,16 +490,13 @@ impl BrowserManager {
             theme_script = theme_script
         );
 
-        let zero_bounds = Rect {
-            position: LogicalPosition::new(0.0, 0.0).into(),
-            size: LogicalSize::new(0.0, 0.0).into(),
-        };
+        let content_bounds = self.get_content_bounds();
         let bg_color = self.get_theme_background_color();
 
         let builder = WebViewBuilder::new()
-            .with_bounds(zero_bounds)
+            .with_bounds(content_bounds)
             .with_background_color(bg_color)
-            .with_transparent(true)
+            .with_transparent(false)
             .with_visible(false)
             .with_initialization_script(&init_script)
             .with_ipc_handler(move |req| {
@@ -540,20 +559,8 @@ impl BrowserManager {
 
     pub fn switch_tab(&mut self, target_id: u32) {
         let content_bounds = self.get_content_bounds();
-        let zero_bounds = Rect {
-            position: LogicalPosition::new(0.0, 0.0).into(),
-            size: LogicalSize::new(0.0, 0.0).into(),
-        };
 
-        // 1. Hide and zero-bound all other tabs first to eliminate click interception
-        for tab in &mut self.tabs {
-            if tab.id != target_id {
-                let _ = tab.webview.set_bounds(zero_bounds);
-                let _ = tab.webview.set_visible(false);
-            }
-        }
-
-        // 2. Show, reposition and focus the target active tab
+        // 1. Show, reposition and focus the target active tab FIRST
         if let Some(active_tab) = self.tabs.iter_mut().find(|t| t.id == target_id) {
             let _ = active_tab.webview.set_bounds(content_bounds);
             let _ = active_tab.webview.set_visible(true);
@@ -562,6 +569,13 @@ impl BrowserManager {
                 if !current_url.is_empty() && current_url != "about:blank" {
                     active_tab.url = current_url;
                 }
+            }
+        }
+
+        // 2. Hide all other tabs (without collapsing their bounds)
+        for tab in &mut self.tabs {
+            if tab.id != target_id {
+                let _ = tab.webview.set_visible(false);
             }
         }
 
@@ -800,20 +814,11 @@ impl BrowserManager {
         }
 
         let content_bounds = self.get_content_bounds();
-        let zero_bounds = Rect {
-            position: LogicalPosition::new(0.0, 0.0).into(),
-            size: LogicalSize::new(0.0, 0.0).into(),
-        };
-
         let active_id = self.active_tab_id;
         for tab in &mut self.tabs {
-            if Some(tab.id) == active_id {
-                let _ = tab.webview.set_bounds(content_bounds);
-                let _ = tab.webview.set_visible(true);
-            } else {
-                let _ = tab.webview.set_bounds(zero_bounds);
-                let _ = tab.webview.set_visible(false);
-            }
+            let is_active = Some(tab.id) == active_id;
+            let _ = tab.webview.set_bounds(content_bounds);
+            let _ = tab.webview.set_visible(is_active);
         }
     }
 
@@ -863,6 +868,11 @@ impl BrowserManager {
                 IpcIncoming::SetTheme { theme } => {
                     self.settings.theme = theme;
                     self.storage.save_settings(&self.settings);
+                    #[cfg(target_os = "windows")]
+                    {
+                        let (r, g, b, _) = self.get_theme_background_color();
+                        crate::drag_util::apply_dark_window_attributes(&self.window, (r, g, b));
+                    }
                     self.sync_settings_tabs();
                     self.sync_full_state();
                     self.update_all_tabs_theme();
