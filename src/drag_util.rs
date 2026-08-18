@@ -3,28 +3,19 @@ use tao::window::Window;
 
 #[cfg(target_os = "windows")]
 pub fn drag_window_native(window: &Window) {
-    #[repr(C)]
-    struct POINT {
-        x: i32,
-        y: i32,
-    }
     #[link(name = "user32")]
     extern "system" {
         fn ReleaseCapture() -> i32;
-        fn GetCursorPos(lpPoint: *mut POINT) -> i32;
-        fn PostMessageW(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> i32;
+        fn SendMessageW(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> isize;
     }
 
-    const WM_NCLBUTTONDOWN: u32 = 0x00A1;
-    const HTCAPTION: usize = 2;
+    const WM_SYSCOMMAND: u32 = 0x0112;
+    const SC_DRAGMOVE: usize = 0xF012;
 
     let hwnd = window.hwnd() as isize;
     unsafe {
-        let mut pt = POINT { x: 0, y: 0 };
-        GetCursorPos(&mut pt);
-        let lparam = ((pt.x & 0xFFFF) as isize) | (((pt.y & 0xFFFF) as isize) << 16);
         ReleaseCapture();
-        PostMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, lparam);
+        SendMessageW(hwnd, WM_SYSCOMMAND, SC_DRAGMOVE, 0);
     }
 }
 

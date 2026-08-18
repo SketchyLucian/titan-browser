@@ -124,6 +124,7 @@ impl BrowserManager {
 
     pub fn get_settings_html(&self, active_section: &str) -> String {
         let html = include_str!("../ui/settings.html");
+        let js = include_str!("../ui/dist/settings.js");
         let state_json = serde_json::to_string(&serde_json::json!({
             "settings": self.settings,
             "modules": self.modules,
@@ -131,11 +132,10 @@ impl BrowserManager {
         }))
         .unwrap_or_else(|_| "{}".into());
 
-        let injection = format!(
-            "<script>window.addEventListener('DOMContentLoaded', () => {{ window.initSettings && window.initSettings({}); }});</script>",
-            state_json
-        );
-        html.replace("</body>", &format!("{}</body>", injection))
+        html.replace(
+            "<script src=\"settings.js\"></script>",
+            &format!("<script>{}</script><script>window.addEventListener('DOMContentLoaded', () => {{ window.initSettings && window.initSettings({}); }});</script>", js, state_json)
+        )
     }
 
     pub fn is_settings_url(url: &str) -> bool {
