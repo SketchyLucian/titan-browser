@@ -1,13 +1,14 @@
-use crate::ipc::{Bookmark, BrowserModule, IpcBrowserState, IpcIncoming, IpcTabInfo};
+use crate::ipc::{Bookmark, BrowserModule, BrowserSettings, IpcBrowserState, IpcIncoming, IpcTabInfo};
 use crate::storage::StorageManager;
-use crate::url_utils::normalize_or_search_url;
+use crate::url_utils::normalize_or_search_url_with_engine;
 use std::sync::Arc;
 use tao::dpi::{LogicalPosition, LogicalSize};
 use tao::event_loop::EventLoopProxy;
 use tao::window::Window;
 use wry::{PageLoadEvent, Rect, WebView, WebViewBuilder};
 
-pub const HEADER_HEIGHT: f64 = 102.0;
+pub const HEADER_HEIGHT_COLLAPSED: f64 = 76.0;
+pub const HEADER_HEIGHT_EXPANDED: f64 = 102.0;
 
 #[derive(Debug)]
 pub enum UserEvent {
@@ -37,6 +38,7 @@ pub struct BrowserManager {
     pub next_tab_id: u32,
     pub bookmarks: Vec<Bookmark>,
     pub modules: Vec<BrowserModule>,
+    pub settings: BrowserSettings,
     pub zoom: f64,
     pub window_size: (f64, f64),
 }
@@ -46,6 +48,7 @@ impl BrowserManager {
         let storage = StorageManager::new();
         let bookmarks = storage.load_bookmarks();
         let modules = storage.load_modules();
+        let settings = storage.load_settings();
         let win_size = window.inner_size().to_logical::<f64>(window.scale_factor());
 
         Self {
@@ -58,23 +61,36 @@ impl BrowserManager {
             next_tab_id: 1,
             bookmarks,
             modules,
+            settings,
             zoom: 1.0,
             window_size: (win_size.width, win_size.height),
         }
     }
 
+    pub fn get_header_height(&self) -> f64 {
+        if self.settings.show_bookmarks_bar && !self.bookmarks.is_empty() {
+            HEADER_HEIGHT_EXPANDED
+        } else {
+            HEADER_HEIGHT_COLLAPSED
+        }
+    }
+
     pub fn init(&mut self) {
         let (width, _) = self.window_size;
+        let header_height = self.get_header_height();
         let header_bounds = Rect {
             position: LogicalPosition::new(0.0, 0.0).into(),
-            size: LogicalSize::new(width, HEADER_HEIGHT).into(),
+            size: LogicalSize::new(width, header_height).into(),
         };
 
         let proxy_clone = self.proxy.clone();
         let html_content = Self::get_chrome_html();
 
+        let bg_color = self.get_theme_background_color();
         let header = WebViewBuilder::new()
             .with_bounds(header_bounds)
+            .with_background_color(bg_color)
+            .with_transparent(true)
             .with_html(&html_content)
             .with_ipc_handler(move |req| {
                 let _ = proxy_clone.send_event(UserEvent::Ipc(req.body().clone()));
@@ -103,119 +119,51 @@ impl BrowserManager {
         )
     }
 
-    pub fn get_modules_dashboard_html(modules: &[BrowserModule]) -> String {
-        let mut cards_html = String::new();
-        for m in modules {
-            let checked = if m.enabled { "checked" } else { "" };
-            let icon_svg = "<svg viewBox='0 0 24 24' width='22' height='22' stroke='currentColor' stroke-width='2' fill='none'><path d='M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z'></path></svg>";
+    pub fn get_settings_html(&self, active_section: &str) -> String {
+        let html = include_str!("../ui/settings.html");
+        let state_json = serde_json::to_string(&serde_json::json!({
+            "settings": self.settings,
+            "modules": self.modules,
+            "active_section": active_section,
+        }))
+        .unwrap_or_else(|_| "{}".into());
 
-            cards_html.push_str(&format!(
-                r#"
-                <div class="module-card">
-                    <div class="module-left">
-                        <div class="module-icon-box">{icon_svg}</div>
-                        <div class="module-text">
-                            <div class="module-title-row">
-                                <span class="module-name">{name}</span>
-                            </div>
-                            <div class="module-desc">{desc}</div>
-                        </div>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" onchange="toggleModule('{id}', this.checked)" {checked}>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                "#,
-                icon_svg = icon_svg,
-                name = m.name,
-                desc = m.description,
-                id = m.id,
-                checked = checked
-            ));
+        let injection = format!(
+            "<script>window.addEventListener('DOMContentLoaded', () => {{ window.initSettings && window.initSettings({}); }});</script>",
+            state_json
+        );
+        html.replace("</body>", &format!("{}</body>", injection))
+    }
+
+    pub fn is_settings_url(url: &str) -> bool {
+        url == "titan://settings"
+            || url == "titan://themes"
+            || url == "titan://modules"
+            || url == "titan://darkmode"
+            || url == "about:settings"
+            || url == "about:themes"
+    }
+
+    pub fn is_internal_url(url: &str) -> bool {
+        Self::is_settings_url(url) || url.starts_with("titan://") || url.starts_with("about:")
+    }
+
+    pub fn get_current_window_size(&self) -> (f64, f64) {
+        let scale = self.window.scale_factor();
+        let logical = self.window.inner_size().to_logical::<f64>(scale);
+        if logical.width > 10.0 && logical.height > 10.0 {
+            (logical.width, logical.height)
+        } else {
+            self.window_size
         }
-
-        format!(
-            r#"<!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <title>Titan Browser Settings</title>
-                <style>
-                    * {{ margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; user-select: none; }}
-                    body {{ background: #0f1015; color: #f0f2f8; padding: 40px 20px; min-height: 100vh; }}
-                    .container {{ max-width: 680px; margin: 0 auto; }}
-                    .header-box {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid #232634; }}
-                    .header-left {{ display: flex; align-items: center; gap: 12px; }}
-                    .header-icon {{ width: 38px; height: 38px; color: #38bdf8; background: rgba(56, 189, 248, 0.12); border-radius: 8px; display: flex; align-items: center; justify-content: center; }}
-                    .header-title {{ font-size: 20px; font-weight: 700; color: #ffffff; letter-spacing: 0.3px; }}
-                    .header-subtitle {{ font-size: 12.5px; color: #8d92a6; margin-top: 2px; }}
-                    .stats-pill {{ background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }}
-                    .module-list {{ display: flex; flex-direction: column; gap: 12px; }}
-                    .module-card {{ display: flex; align-items: center; justify-content: space-between; background: #181a23; border: 1px solid #282c3c; border-radius: 10px; padding: 18px 22px; transition: all 0.2s ease; }}
-                    .module-card:hover {{ background: #1f222e; border-color: #3d425b; }}
-                    .module-left {{ display: flex; align-items: center; gap: 16px; flex: 1; }}
-                    .module-icon-box {{ width: 44px; height: 44px; border-radius: 10px; background: #13141b; border: 1px solid #252838; display: flex; align-items: center; justify-content: center; color: #38bdf8; }}
-                    .module-title-row {{ display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }}
-                    .module-name {{ font-size: 15px; font-weight: 600; color: #ffffff; }}
-                    .module-desc {{ font-size: 13px; color: #9499ad; line-height: 1.4; }}
-                    .switch {{ position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }}
-                    .switch input {{ opacity: 0; width: 0; height: 0; }}
-                    .slider {{ position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #313547; transition: 0.25s; border-radius: 24px; }}
-                    .slider:before {{ position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: 0.25s; border-radius: 50%; }}
-                    input:checked + .slider {{ background-color: #4e7cf6; }}
-                    input:checked + .slider:before {{ transform: translateX(20px); }}
-                    .footer-note {{ margin-top: 30px; text-align: center; font-size: 11.5px; color: #5d6175; }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header-box">
-                        <div class="header-left">
-                            <div class="header-icon">
-                                <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none">
-                                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                                </svg>
-                            </div>
-                            <div>
-                                <div class="header-title">Universal Dark Mode</div>
-                                <div class="header-subtitle">Toggle smart dark theme across all websites.</div>
-                            </div>
-                        </div>
-                        <div class="stats-pill">⚡ Native Filter</div>
-                    </div>
-
-                    <div class="module-list">
-                        {cards_html}
-                    </div>
-
-                    <div class="footer-note">
-                        Titan Browser &bull; Minimalist, Fast, and Focused.
-                    </div>
-                </div>
-
-                <script>
-                    function toggleModule(id, enabled) {{
-                        if (window.ipc && window.ipc.postMessage) {{
-                            window.ipc.postMessage(JSON.stringify({{
-                                type: 'ToggleModule',
-                                module_id: id,
-                                enabled: enabled
-                            }}));
-                        }}
-                    }}
-                </script>
-            </body>
-            </html>"#,
-            cards_html = cards_html
-        )
     }
 
     fn get_content_bounds(&self) -> Rect {
-        let (width, height) = self.window_size;
-        let content_height = (height - HEADER_HEIGHT).max(10.0);
+        let (width, height) = self.get_current_window_size();
+        let header_height = self.get_header_height();
+        let content_height = (height - header_height).max(10.0);
         Rect {
-            position: LogicalPosition::new(0.0, HEADER_HEIGHT).into(),
+            position: LogicalPosition::new(0.0, header_height).into(),
             size: LogicalSize::new(width, content_height).into(),
         }
     }
@@ -228,26 +176,256 @@ impl BrowserManager {
             .unwrap_or(false)
     }
 
+    pub fn get_theme_background_color(&self) -> (u8, u8, u8, u8) {
+        match self.settings.theme.as_str() {
+            "titan-light" => (241, 245, 249, 255),
+            "midnight" => (0, 0, 0, 255),
+            "cyber-neon" => (13, 11, 24, 255),
+            "nordic" => (15, 23, 28, 255),
+            "amber" => (20, 18, 16, 255),
+            _ => (15, 16, 21, 255),
+        }
+    }
+
+    pub fn get_theme_injection_script(&self) -> String {
+        let is_light = self.settings.theme == "titan-light";
+        let force_adaptation = self.is_module_enabled("dark_reader");
+
+        format!(
+            r#"
+            (function() {{
+                const isLight = {is_light};
+                const forceAdaptation = {force_adaptation};
+
+                // 1. Emulate prefers-color-scheme media queries for JS-driven sites (YouTube, GitHub, Google, Reddit, etc.)
+                try {{
+                    window._titanIsLight = isLight;
+                    if (!window._titanMatchMediaPatched) {{
+                        window._titanMatchMediaPatched = true;
+                        const origMM = window.matchMedia;
+                        window.matchMedia = function(q) {{
+                            if (typeof q === 'string') {{
+                                if (q.includes('prefers-color-scheme: dark')) {{
+                                    return {{
+                                        matches: !window._titanIsLight,
+                                        media: q,
+                                        onchange: null,
+                                        addListener: function() {{}},
+                                        removeListener: function() {{}},
+                                        addEventListener: function() {{}},
+                                        removeEventListener: function() {{}},
+                                        dispatchEvent: function() {{ return false; }}
+                                    }};
+                                }}
+                                if (q.includes('prefers-color-scheme: light')) {{
+                                    return {{
+                                        matches: !!window._titanIsLight,
+                                        media: q,
+                                        onchange: null,
+                                        addListener: function() {{}},
+                                        removeListener: function() {{}},
+                                        addEventListener: function() {{}},
+                                        removeEventListener: function() {{}},
+                                        dispatchEvent: function() {{ return false; }}
+                                    }};
+                                }}
+                            }}
+                            return origMM ? origMM.call(window, q) : {{ matches: false, media: q }};
+                        }};
+                    }}
+                }} catch(e) {{}}
+
+                // 2. Set color-scheme meta tag & instant root dark canvas
+                try {{
+                    let meta = document.querySelector('meta[name="color-scheme"]');
+                    if (!meta) {{
+                        meta = document.createElement('meta');
+                        meta.name = 'color-scheme';
+                        meta.content = isLight ? 'light' : 'dark';
+                        if (document.head) document.head.appendChild(meta);
+                    }} else {{
+                        meta.content = isLight ? 'light' : 'dark';
+                    }}
+
+                    if (!isLight && !document.getElementById('titan-pre-dark-canvas')) {{
+                        const preStyle = document.createElement('style');
+                        preStyle.id = 'titan-pre-dark-canvas';
+                        preStyle.textContent = 'html, body {{ background-color: #121318 !important; color-scheme: dark !important; }}';
+                        if (document.documentElement) {{
+                            document.documentElement.appendChild(preStyle);
+                        }} else if (document.head) {{
+                            document.head.appendChild(preStyle);
+                        }}
+                    }}
+                }} catch(e) {{}}
+
+                const host = (window.location.hostname || '').toLowerCase();
+                const href = (window.location.href || '').toLowerCase();
+
+                // If on internal / blank URL, do not execute page-level mutations
+                if (!host || href.startsWith('titan://') || href.startsWith('about:')) return;
+
+                // 3. Framework Theme Classes & LocalStorage (Tauri, VitePress, Docusaurus, Tailwind, GitHub, Next.js, Starlight, Astro)
+                try {{
+                    const html = document.documentElement;
+                    const body = document.body;
+                    const targetMode = isLight ? 'light' : 'dark';
+                    const removeMode = isLight ? 'dark' : 'light';
+
+                    if (html) {{
+                        if (html.classList.contains('dark') || html.classList.contains('light') || host.includes('tauri.app') || host.includes('vitepress') || host.includes('docusaurus')) {{
+                            html.classList.remove(removeMode);
+                            html.classList.add(targetMode);
+                        }}
+                        if (html.hasAttribute('data-theme')) html.setAttribute('data-theme', targetMode);
+                        if (html.hasAttribute('data-color-mode')) html.setAttribute('data-color-mode', targetMode);
+                    }}
+
+                    if (body) {{
+                        if (body.classList.contains('dark') || body.classList.contains('light')) {{
+                            body.classList.remove(removeMode);
+                            body.classList.add(targetMode);
+                        }}
+                        if (body.hasAttribute('data-theme')) body.setAttribute('data-theme', targetMode);
+                    }}
+
+                    // Synchronize theme storage keys used by modern documentation & UI frameworks
+                    const themeKeys = [
+                        'theme',
+                        'color-theme',
+                        'color-mode',
+                        'vitepress-theme-appearance',
+                        'docusaurus.theme',
+                        'starlight-theme',
+                        'astro-theme',
+                        'tailwind-theme',
+                        'next-themes-theme',
+                        'theme-preference'
+                    ];
+                    themeKeys.forEach(k => {{
+                        try {{
+                            if (localStorage.getItem(k) !== null) {{
+                                localStorage.setItem(k, targetMode);
+                            }}
+                        }} catch(e) {{}}
+                    }});
+                }} catch(e) {{}}
+
+                // 4. YouTube specific cookie & attribute handling
+                const isYouTube = host.includes('youtube.com') || host.includes('youtu.be');
+                if (isYouTube) {{
+                    if (isLight) {{
+                        document.documentElement.removeAttribute('dark');
+                        try {{
+                            if (document.cookie.includes('f6=400')) {{
+                                document.cookie = "PREF=f6=00000000; domain=.youtube.com; path=/";
+                            }}
+                        }} catch(e) {{}}
+                    }} else {{
+                        document.documentElement.setAttribute('dark', 'true');
+                    }}
+                }}
+
+                // 5. Adapt pages that do not natively support the selected theme
+                function adaptTheme() {{
+                    if (!host || href.startsWith('titan://') || href.startsWith('about:')) return;
+
+                    const isNativelyAdaptive = host.includes('google.') || host.includes('youtube.com') || host.includes('youtu.be') || host.includes('github.com') || host.includes('gitlab.com') || host.includes('reddit.com') || host.includes('duckduckgo.com') || host.includes('bing.com') || host.includes('wikipedia.org') || host.includes('stackoverflow.com') || host.includes('x.com') || host.includes('twitter.com') || host.includes('tauri.app') || host.includes('vitepress') || host.includes('docusaurus');
+
+                    let el = document.getElementById('titan-theme-adaptation-style');
+
+                    if (isNativelyAdaptive || !forceAdaptation) {{
+                        if (el) el.remove();
+                        return;
+                    }}
+
+                    function getLum(elem) {{
+                        try {{
+                            const bg = window.getComputedStyle(elem).backgroundColor;
+                            const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                            if (!match) return isLight ? 1 : 0;
+                            const r = parseInt(match[1], 10);
+                            const g = parseInt(match[2], 10);
+                            const b = parseInt(match[3], 10);
+                            return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                        }} catch(e) {{
+                            return isLight ? 1 : 0;
+                        }}
+                    }}
+
+                    const docLum = document.documentElement ? getLum(document.documentElement) : (isLight ? 1 : 0);
+                    const bodyLum = document.body ? getLum(document.body) : (isLight ? 1 : 0);
+
+                    if (isLight) {{
+                        const isDarkOnly = (docLum < 0.35 || bodyLum < 0.35);
+                        if (isDarkOnly) {{
+                            if (!el) {{
+                                el = document.createElement('style');
+                                el.id = 'titan-theme-adaptation-style';
+                                el.textContent = 'html {{ filter: invert(90%) hue-rotate(180deg) !important; background: #fff !important; }} img, video, iframe, canvas, svg, [style*="background-image"], .html5-video-player {{ filter: invert(100%) hue-rotate(180deg) !important; }}';
+                                document.documentElement.appendChild(el);
+                            }}
+                        }} else {{
+                            if (el) el.remove();
+                        }}
+                    }} else {{
+                        const isBrightOnly = (docLum >= 0.35 && bodyLum >= 0.35);
+                        if (isBrightOnly) {{
+                            if (!el) {{
+                                el = document.createElement('style');
+                                el.id = 'titan-theme-adaptation-style';
+                                el.textContent = 'html {{ filter: invert(90%) hue-rotate(180deg) !important; background: #111 !important; }} img, video, iframe, canvas, svg, [style*="background-image"], .html5-video-player {{ filter: invert(100%) hue-rotate(180deg) !important; }}';
+                                document.documentElement.appendChild(el);
+                            }}
+                        }} else {{
+                            if (el) el.remove();
+                        }}
+                    }}
+                }}
+
+                if (document.readyState === 'complete') {{
+                    adaptTheme();
+                }} else {{
+                    window.addEventListener('load', adaptTheme, {{ once: true }});
+                }}
+            }})();
+            "#,
+            is_light = is_light,
+            force_adaptation = force_adaptation
+        )
+    }
+
+    pub fn update_all_tabs_theme(&self) {
+        let script = self.get_theme_injection_script();
+        for tab in &self.tabs {
+            if !Self::is_internal_url(&tab.url) {
+                let _ = tab.webview.evaluate_script(&script);
+            }
+        }
+    }
+
     pub fn create_tab(&mut self, target_url: &str) -> u32 {
         let tab_id = self.next_tab_id;
         self.next_tab_id += 1;
 
-        let is_modules_page = target_url == "titan://modules" || target_url == "titan://darkmode" || target_url == "titan://settings";
-        let normalized_url = if is_modules_page {
-            "titan://modules".to_string()
-        } else {
-            normalize_or_search_url(target_url)
-        };
+        let is_settings = Self::is_settings_url(target_url);
+        let is_themes = target_url == "titan://themes" || target_url == "about:themes";
 
-        let bounds = self.get_content_bounds();
+        let normalized_url = if is_settings {
+            "titan://settings".to_string()
+        } else {
+            normalize_or_search_url_with_engine(target_url, &self.settings.search_engine)
+        };
 
         let proxy_ipc = self.proxy.clone();
         let proxy_load = self.proxy.clone();
         let tab_id_copy = tab_id;
+        let theme_script = if is_settings {
+            "".to_string()
+        } else {
+            self.get_theme_injection_script()
+        };
 
-        let darkmode_enabled = self.is_module_enabled("dark_reader");
-
-        // Clean, lightweight observer script with 0 video tampering
         let init_script = format!(
             r#"
             (function() {{
@@ -275,35 +453,32 @@ impl BrowserManager {
                                 }}));
                             }} catch(e) {{}}
                         }}
-                    }}, 250);
+                    }}, 400);
                 }}
 
-                const titleEl = document.querySelector('title');
-                if (titleEl) {{
-                    new MutationObserver(notify).observe(titleEl, {{ subtree: true, characterData: true, childList: true }});
-                }}
                 window.addEventListener('popstate', notify);
                 window.addEventListener('load', notify);
+                document.addEventListener('visibilitychange', notify);
                 setTimeout(notify, 500);
 
-                const darkActive = {darkmode_enabled};
-                if (darkActive) {{
-                    document.addEventListener('DOMContentLoaded', () => {{
-                        let el = document.getElementById('titan-dark-reader-style');
-                        if (!el) {{
-                            el = document.createElement('style');
-                            el.id = 'titan-dark-reader-style';
-                            el.textContent = 'html {{ filter: invert(90%) hue-rotate(180deg) !important; background: #111 !important; }} img, video, iframe, canvas, svg, [style*="background-image"] {{ filter: invert(100%) hue-rotate(180deg) !important; }}';
-                            document.documentElement.appendChild(el);
-                        }}
-                    }});
-                }}
+                {theme_script}
             }})();
-            "#
+            "#,
+            tab_id = tab_id,
+            theme_script = theme_script
         );
 
+        let zero_bounds = Rect {
+            position: LogicalPosition::new(0.0, 0.0).into(),
+            size: LogicalSize::new(0.0, 0.0).into(),
+        };
+        let bg_color = self.get_theme_background_color();
+
         let builder = WebViewBuilder::new()
-            .with_bounds(bounds)
+            .with_bounds(zero_bounds)
+            .with_background_color(bg_color)
+            .with_transparent(true)
+            .with_visible(false)
             .with_initialization_script(&init_script)
             .with_ipc_handler(move |req| {
                 let _ = proxy_ipc.send_event(UserEvent::Ipc(req.body().clone()));
@@ -323,13 +498,14 @@ impl BrowserManager {
                 }
             });
 
-        let modules_html = if is_modules_page {
-            Some(Self::get_modules_dashboard_html(&self.modules))
+        let internal_html = if is_settings {
+            let section = if is_themes { "themes" } else { "general" };
+            Some(self.get_settings_html(section))
         } else {
             None
         };
 
-        let webview = if let Some(ref html) = modules_html {
+        let webview = if let Some(ref html) = internal_html {
             builder.with_html(html)
         } else {
             builder.with_url(&normalized_url)
@@ -337,8 +513,10 @@ impl BrowserManager {
         .build(&*self.window)
         .expect("Failed to create content webview for tab");
 
-        let default_title = if is_modules_page {
-            "Universal Dark Mode".to_string()
+        let default_title = if is_themes {
+            "Themes".to_string()
+        } else if is_settings {
+            "Settings".to_string()
         } else if normalized_url.contains("youtube.com") {
             "YouTube".to_string()
         } else {
@@ -349,7 +527,7 @@ impl BrowserManager {
             id: tab_id,
             url: normalized_url,
             title: default_title,
-            is_loading: !is_modules_page,
+            is_loading: !is_settings,
             can_go_back: false,
             can_go_forward: false,
             webview,
@@ -362,10 +540,15 @@ impl BrowserManager {
 
     pub fn switch_tab(&mut self, target_id: u32) {
         let content_bounds = self.get_content_bounds();
+        let zero_bounds = Rect {
+            position: LogicalPosition::new(0.0, 0.0).into(),
+            size: LogicalSize::new(0.0, 0.0).into(),
+        };
 
-        // 1. Hide all other tabs first to avoid focus conflicts
+        // 1. Hide and zero-bound all other tabs first to eliminate click interception
         for tab in &mut self.tabs {
             if tab.id != target_id {
+                let _ = tab.webview.set_bounds(zero_bounds);
                 let _ = tab.webview.set_visible(false);
             }
         }
@@ -409,26 +592,30 @@ impl BrowserManager {
     }
 
     pub fn navigate_active_tab(&mut self, input: &str) {
-        if input == "titan://modules" || input == "titan://darkmode" || input == "titan://settings" {
+        if Self::is_settings_url(input) {
+            let is_themes = input == "titan://themes" || input == "about:themes";
+            let section = if is_themes { "themes" } else { "general" };
+            let html = self.get_settings_html(section);
             if let Some(active_id) = self.active_tab_id {
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
-                    tab.url = "titan://modules".into();
-                    tab.title = "Universal Dark Mode".into();
+                    tab.url = "titan://settings".into();
+                    tab.title = if is_themes { "Themes".into() } else { "Settings".into() };
                     tab.is_loading = false;
-                    let html = Self::get_modules_dashboard_html(&self.modules);
                     let _ = tab.webview.load_html(&html);
+                    let _ = tab.webview.focus();
                 }
                 self.sync_tab_update(active_id);
             }
             return;
         }
 
-        let normalized = normalize_or_search_url(input);
+        let normalized = normalize_or_search_url_with_engine(input, &self.settings.search_engine);
         if let Some(active_id) = self.active_tab_id {
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                 tab.url = normalized.clone();
                 tab.is_loading = true;
                 let _ = tab.webview.load_url(&normalized);
+                let _ = tab.webview.focus();
             }
             self.sync_tab_update(active_id);
         }
@@ -436,28 +623,41 @@ impl BrowserManager {
 
     pub fn go_back(&mut self) {
         if let Some(active_id) = self.active_tab_id {
-            if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
+            if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                 let _ = tab.webview.evaluate_script("window.history.back();");
+                let _ = tab.webview.focus();
             }
         }
     }
 
     pub fn go_forward(&mut self) {
         if let Some(active_id) = self.active_tab_id {
-            if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
+            if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                 let _ = tab.webview.evaluate_script("window.history.forward();");
+                let _ = tab.webview.focus();
             }
         }
     }
 
     pub fn reload(&mut self) {
         if let Some(active_id) = self.active_tab_id {
-            if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
-                if tab.url == "titan://modules" {
-                    let html = Self::get_modules_dashboard_html(&self.modules);
+            let tab_url = self
+                .tabs
+                .iter()
+                .find(|t| t.id == active_id)
+                .map(|t| t.url.clone())
+                .unwrap_or_default();
+
+            if Self::is_settings_url(&tab_url) {
+                let html = self.get_settings_html("general");
+                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                     let _ = tab.webview.load_html(&html);
-                } else {
+                    let _ = tab.webview.focus();
+                }
+            } else {
+                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                     let _ = tab.webview.evaluate_script("window.location.reload();");
+                    let _ = tab.webview.focus();
                 }
             }
         }
@@ -483,13 +683,32 @@ impl BrowserManager {
             self.bookmarks.push(Bookmark { title, url });
         }
         self.storage.save_bookmarks(&self.bookmarks);
+        let (w, h) = self.window_size;
+        self.resize(w, h);
         self.sync_full_state();
     }
 
     pub fn remove_bookmark(&mut self, url: &str) {
         self.bookmarks.retain(|b| b.url != url);
         self.storage.save_bookmarks(&self.bookmarks);
+        let (w, h) = self.window_size;
+        self.resize(w, h);
         self.sync_full_state();
+    }
+
+    pub fn sync_settings_tabs(&self) {
+        let state_json = serde_json::to_string(&serde_json::json!({
+            "settings": self.settings,
+            "modules": self.modules,
+        }))
+        .unwrap_or_else(|_| "{}".into());
+
+        let script = format!("window.initSettings && window.initSettings({});", state_json);
+        for tab in &self.tabs {
+            if Self::is_settings_url(&tab.url) {
+                let _ = tab.webview.evaluate_script(&script);
+            }
+        }
     }
 
     pub fn toggle_module(&mut self, module_id: &str, enabled: bool) {
@@ -498,43 +717,11 @@ impl BrowserManager {
         }
         self.storage.save_modules(&self.modules);
 
-        // Re-render any open titan://modules tab
-        let modules_html = Self::get_modules_dashboard_html(&self.modules);
-        for tab in &self.tabs {
-            if tab.url == "titan://modules" {
-                let _ = tab.webview.load_html(&modules_html);
-            }
-        }
+        // Re-sync any open settings tabs
+        self.sync_settings_tabs();
 
-        // Apply dark mode filter dynamically to all open web content tabs
-        if module_id == "dark_reader" {
-            let script = if enabled {
-                r#"
-                (function() {
-                    let el = document.getElementById('titan-dark-reader-style');
-                    if (!el) {
-                        el = document.createElement('style');
-                        el.id = 'titan-dark-reader-style';
-                        el.textContent = 'html { filter: invert(90%) hue-rotate(180deg) !important; background: #111 !important; } img, video, iframe, canvas, svg, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
-                        document.documentElement.appendChild(el);
-                    }
-                })();
-                "#
-            } else {
-                r#"
-                (function() {
-                    const el = document.getElementById('titan-dark-reader-style');
-                    if (el) el.remove();
-                })();
-                "#
-            };
-
-            for tab in &self.tabs {
-                if tab.url != "titan://modules" {
-                    let _ = tab.webview.evaluate_script(script);
-                }
-            }
-        }
+        // Apply dark mode or light mode dynamically across all open web content tabs
+        self.update_all_tabs_theme();
 
         self.sync_full_state();
     }
@@ -550,7 +737,7 @@ impl BrowserManager {
     }
 
     pub fn on_page_load_finished(&mut self, tab_id: u32, url: String) {
-        let dark_mode_active = self.is_module_enabled("dark_reader");
+        let theme_script = self.get_theme_injection_script();
 
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
             tab.is_loading = false;
@@ -563,20 +750,9 @@ impl BrowserManager {
                 }
             }
 
-            // If dark reader is enabled, inject into finished page
-            if dark_mode_active && tab.url != "titan://modules" {
-                let dark_script = r#"
-                    (function() {
-                        let el = document.getElementById('titan-dark-reader-style');
-                        if (!el) {
-                            el = document.createElement('style');
-                            el.id = 'titan-dark-reader-style';
-                            el.textContent = 'html { filter: invert(90%) hue-rotate(180deg) !important; background: #111 !important; } img, video, iframe, canvas, svg, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
-                            document.documentElement.appendChild(el);
-                        }
-                    })();
-                "#;
-                let _ = tab.webview.evaluate_script(dark_script);
+            // Inject matching theme script for web content
+            if !Self::is_internal_url(&tab.url) {
+                let _ = tab.webview.evaluate_script(&theme_script);
             }
         }
         self.sync_tab_update(tab_id);
@@ -612,10 +788,11 @@ impl BrowserManager {
 
     pub fn resize(&mut self, width: f64, height: f64) {
         self.window_size = (width, height);
+        let header_height = self.get_header_height();
 
         let header_bounds = Rect {
             position: LogicalPosition::new(0.0, 0.0).into(),
-            size: LogicalSize::new(width, HEADER_HEIGHT).into(),
+            size: LogicalSize::new(width, header_height).into(),
         };
 
         if let Some(header) = &self.header_webview {
@@ -623,9 +800,19 @@ impl BrowserManager {
         }
 
         let content_bounds = self.get_content_bounds();
-        if let Some(active_id) = self.active_tab_id {
-            if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
+        let zero_bounds = Rect {
+            position: LogicalPosition::new(0.0, 0.0).into(),
+            size: LogicalSize::new(0.0, 0.0).into(),
+        };
+
+        let active_id = self.active_tab_id;
+        for tab in &mut self.tabs {
+            if Some(tab.id) == active_id {
                 let _ = tab.webview.set_bounds(content_bounds);
+                let _ = tab.webview.set_visible(true);
+            } else {
+                let _ = tab.webview.set_bounds(zero_bounds);
+                let _ = tab.webview.set_visible(false);
             }
         }
     }
@@ -672,6 +859,49 @@ impl BrowserManager {
                 }
                 IpcIncoming::ToggleModule { module_id, enabled } => {
                     self.toggle_module(&module_id, enabled);
+                }
+                IpcIncoming::SetTheme { theme } => {
+                    self.settings.theme = theme;
+                    self.storage.save_settings(&self.settings);
+                    self.sync_settings_tabs();
+                    self.sync_full_state();
+                    self.update_all_tabs_theme();
+                }
+                IpcIncoming::SetAccentColor { color } => {
+                    self.settings.accent_color = color;
+                    self.storage.save_settings(&self.settings);
+                    self.sync_settings_tabs();
+                    self.sync_full_state();
+                }
+                IpcIncoming::SetSearchEngine { engine } => {
+                    self.settings.search_engine = engine;
+                    self.storage.save_settings(&self.settings);
+                    self.sync_full_state();
+                }
+                IpcIncoming::SetShowBookmarksBar { show } => {
+                    self.settings.show_bookmarks_bar = show;
+                    self.storage.save_settings(&self.settings);
+                    let (w, h) = self.window_size;
+                    self.resize(w, h);
+                    self.sync_full_state();
+                }
+                IpcIncoming::OpenThemes => {
+                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url)) {
+                        let tab_id = self.tabs[pos].id;
+                        self.switch_tab(tab_id);
+                        let _ = self.tabs[pos].webview.evaluate_script("window.switchView && window.switchView('themes');");
+                    } else {
+                        self.create_tab("titan://themes");
+                    }
+                }
+                IpcIncoming::OpenSettings => {
+                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url)) {
+                        let tab_id = self.tabs[pos].id;
+                        self.switch_tab(tab_id);
+                        let _ = self.tabs[pos].webview.evaluate_script("window.switchView && window.switchView('general');");
+                    } else {
+                        self.create_tab("titan://settings");
+                    }
                 }
                 IpcIncoming::ShowBookmarkContextMenu { url } => {
                     #[cfg(target_os = "windows")]
@@ -740,8 +970,9 @@ impl BrowserManager {
                 active_tab_id: self.active_tab_id,
                 bookmarks: self.bookmarks.clone(),
                 modules: self.modules.clone(),
+                settings: self.settings.clone(),
                 zoom: self.zoom,
-                search_engine: "Google".into(),
+                search_engine: self.settings.search_engine.clone(),
                 is_maximized: self.window.is_maximized(),
             };
 

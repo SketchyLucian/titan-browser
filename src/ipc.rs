@@ -27,11 +27,31 @@ pub struct IpcTabInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserSettings {
+    pub theme: String,
+    pub accent_color: String,
+    pub search_engine: String,
+    pub show_bookmarks_bar: bool,
+}
+
+impl Default for BrowserSettings {
+    fn default() -> Self {
+        Self {
+            theme: "titan-dark".into(),
+            accent_color: "#4e7cf6".into(),
+            search_engine: "Google".into(),
+            show_bookmarks_bar: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcBrowserState {
     pub tabs: Vec<IpcTabInfo>,
     pub active_tab_id: Option<u32>,
     pub bookmarks: Vec<Bookmark>,
     pub modules: Vec<BrowserModule>,
+    pub settings: BrowserSettings,
     pub zoom: f64,
     pub search_engine: String,
     pub is_maximized: bool,
@@ -74,6 +94,20 @@ pub enum IpcIncoming {
         module_id: String,
         enabled: bool,
     },
+    SetTheme {
+        theme: String,
+    },
+    SetAccentColor {
+        color: String,
+    },
+    SetSearchEngine {
+        engine: String,
+    },
+    SetShowBookmarksBar {
+        show: bool,
+    },
+    OpenSettings,
+    OpenThemes,
     TabStateUpdate {
         tab_id: Option<u32>,
         url: String,

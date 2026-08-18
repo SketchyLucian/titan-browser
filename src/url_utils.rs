@@ -1,7 +1,23 @@
+pub fn search_url_for_engine(engine: &str, query: &str) -> String {
+    let encoded = urlencoding(query);
+    match engine {
+        "DuckDuckGo" => format!("https://duckduckgo.com/?q={}", encoded),
+        "Bing" => format!("https://www.bing.com/search?q={}", encoded),
+        "Brave" => format!("https://search.brave.com/search?q={}", encoded),
+        "YouTube" => format!("https://www.youtube.com/results?search_query={}", encoded),
+        _ => format!("https://www.google.com/search?q={}", encoded),
+    }
+}
+
+#[allow(dead_code)]
 pub fn normalize_or_search_url(input: &str) -> String {
+    normalize_or_search_url_with_engine(input, "Google")
+}
+
+pub fn normalize_or_search_url_with_engine(input: &str, engine: &str) -> String {
     let trimmed = input.trim();
     if trimmed.is_empty() {
-        return "https://www.google.com".to_string();
+        return search_url_for_engine(engine, "");
     }
 
     // Direct protocol checks
@@ -9,6 +25,8 @@ pub fn normalize_or_search_url(input: &str) -> String {
         || trimmed.starts_with("https://")
         || trimmed.starts_with("file://")
         || trimmed.starts_with("about:")
+        || trimmed.starts_with("titan://")
+        || trimmed.starts_with("chrome://")
     {
         return trimmed.to_string();
     }
@@ -48,8 +66,8 @@ pub fn normalize_or_search_url(input: &str) -> String {
         return format!("https://{trimmed}");
     }
 
-    // Default to Google search
-    format!("https://www.google.com/search?q={}", urlencoding(trimmed))
+    // Default search engine
+    search_url_for_engine(engine, trimmed)
 }
 
 fn is_likely_domain_or_ip(text: &str) -> bool {

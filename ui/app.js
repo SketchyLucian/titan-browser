@@ -7,6 +7,12 @@
     active_tab_id: 1,
     bookmarks: [],
     modules: [],
+    settings: {
+      theme: 'titan-dark',
+      accent_color: '#4e7cf6',
+      search_engine: 'Google',
+      show_bookmarks_bar: false,
+    },
     zoom: 1.0,
     searchEngine: 'Google',
     is_maximized: false,
@@ -23,6 +29,7 @@
   const urlInput = document.getElementById('urlInput');
   const sslBadge = document.getElementById('sslBadge');
   const bookmarkToggleBtn = document.getElementById('bookmarkToggleBtn');
+  const bookmarksBar = document.getElementById('bookmarksBar');
   const bookmarksList = document.getElementById('bookmarksList');
   const zoomInBtn = document.getElementById('zoomInBtn');
   const zoomOutBtn = document.getElementById('zoomOutBtn');
@@ -32,7 +39,9 @@
   const winMinBtn = document.getElementById('winMinBtn');
   const winMaxBtn = document.getElementById('winMaxBtn');
   const winCloseBtn = document.getElementById('winCloseBtn');
-  const darkModeToggleBtn = document.getElementById('darkModeToggleBtn');
+  const settingsBtn = document.getElementById('settingsBtn');
+  const brandLogo = document.getElementById('brandLogo');
+  const searchEngineBadge = document.getElementById('searchEngineBadge');
 
   // Helper to send IPC messages to Rust
   function sendIpc(message) {
@@ -60,13 +69,13 @@
 
       // Favicon / Special icons
       const isYt = tab.url && (tab.url.includes('youtube.com') || tab.url.includes('youtu.be'));
-      const isSettings = tab.url && tab.url.startsWith('titan://');
+      const isSettings = tab.url && (tab.url.startsWith('titan://') || tab.url.startsWith('about:settings'));
       
       let iconHtml = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
       if (isYt) {
         iconHtml = `<svg viewBox="0 0 24 24" width="14" height="14" fill="#ff4757"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>`;
       } else if (isSettings) {
-        iconHtml = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+        iconHtml = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`;
       }
 
       tabEl.innerHTML = `
@@ -105,6 +114,15 @@
   // Render Bookmarks with Native Context Menu Support
   function renderBookmarks() {
     bookmarksList.innerHTML = '';
+    
+    // Check if bookmarks bar should be visible
+    const showBar = state.settings && state.settings.show_bookmarks_bar && state.bookmarks.length > 0;
+    if (showBar) {
+      bookmarksBar.classList.add('visible');
+    } else {
+      bookmarksBar.classList.remove('visible');
+    }
+
     state.bookmarks.forEach((bm) => {
       const isYt = bm.url && bm.url.includes('youtube.com');
       const bmEl = document.createElement('div');
@@ -133,16 +151,6 @@
     });
   }
 
-  // 1-Click Dark Mode Toggle
-  darkModeToggleBtn.addEventListener('click', () => {
-    const isDark = state.modules.some((m) => m.id === 'dark_reader' && m.enabled);
-    sendIpc({
-      type: 'ToggleModule',
-      module_id: 'dark_reader',
-      enabled: !isDark,
-    });
-  });
-
   // Update Navigation Bar State & URL Display
   function updateNav() {
     const activeTab = getActiveTab();
@@ -157,7 +165,7 @@
     }
 
     // SSL Lock indication
-    if (activeTab.url && (activeTab.url.startsWith('https://') || activeTab.url.startsWith('titan://'))) {
+    if (activeTab.url && (activeTab.url.startsWith('https://') || activeTab.url.startsWith('titan://') || activeTab.url.startsWith('about:'))) {
       sslBadge.className = 'ssl-indicator';
       sslBadge.title = 'Connection is secure';
     } else {
@@ -180,18 +188,30 @@
       bookmarkToggleBtn.classList.remove('bookmarked');
     }
 
-    // Dark Mode active button state
-    const isDarkActive = state.modules.some((m) => m.id === 'dark_reader' && m.enabled);
-    if (isDarkActive) {
-      darkModeToggleBtn.classList.add('active');
-      darkModeToggleBtn.title = 'Universal Dark Mode is ON (Click to turn off)';
-    } else {
-      darkModeToggleBtn.classList.remove('active');
-      darkModeToggleBtn.title = 'Universal Dark Mode is OFF (Click to turn on)';
-    }
+    // Update search engine badge
+    const curEngine = (state.settings && state.settings.search_engine) || state.searchEngine || 'Google';
+    searchEngineBadge.querySelector('span').textContent = curEngine;
 
     zoomDisplay.textContent = `${Math.round(state.zoom * 100)}%`;
   }
+
+  // Apply Theme to Chrome UI
+  function applyTheme(themeName, accentColor) {
+    document.body.className = `theme-${themeName || 'titan-dark'}`;
+    if (accentColor) {
+      document.documentElement.style.setProperty('--accent-blue', accentColor);
+      document.documentElement.style.setProperty('--border-focus', accentColor);
+    }
+  }
+
+  // Settings Buttons
+  settingsBtn.addEventListener('click', () => {
+    sendIpc({ type: 'OpenSettings' });
+  });
+
+  brandLogo.addEventListener('click', () => {
+    sendIpc({ type: 'OpenSettings' });
+  });
 
   // Window Controls Listeners
   winMinBtn.addEventListener('click', (e) => {
@@ -238,11 +258,13 @@
     sendIpc({ type: 'GoForward' });
   });
 
-  reloadBtn.addEventListener('click', () => {
+  reloadBtn.addEventListener('click', (e) => {
+    e.currentTarget.blur();
     sendIpc({ type: 'Reload' });
   });
 
-  homeBtn.addEventListener('click', () => {
+  homeBtn.addEventListener('click', (e) => {
+    e.currentTarget.blur();
     sendIpc({ type: 'GoHome' });
   });
 
@@ -308,6 +330,9 @@
       } else if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
         sendIpc({ type: 'Reload' });
+      } else if (e.key === ',' || e.key === '<') {
+        e.preventDefault();
+        sendIpc({ type: 'OpenSettings' });
       }
     }
   });
@@ -319,17 +344,38 @@
       state.activeTabId = newState.active_tab_id;
       state.active_tab_id = newState.active_tab_id;
     }
+    if (state.settings) {
+      applyTheme(state.settings.theme, state.settings.accent_color);
+    }
     renderTabs();
     renderBookmarks();
     updateNav();
   };
 
   window.onTabUpdate = function (tabUpdate) {
-    const idx = state.tabs.findIndex((t) => t.id === tabUpdate.id);
-    if (idx !== -1) {
-      state.tabs[idx] = { ...state.tabs[idx], ...tabUpdate };
-      renderTabs();
-      updateNav();
+    const tab = state.tabs.find((t) => t.id === tabUpdate.id);
+    if (tab) {
+      const titleChanged = tabUpdate.title && tabUpdate.title !== tab.title;
+      const loadingChanged = tabUpdate.is_loading !== undefined && tabUpdate.is_loading !== tab.is_loading;
+
+      Object.assign(tab, tabUpdate);
+
+      if (titleChanged || loadingChanged) {
+        const tabEl = tabsContainer.querySelector(`.tab-item[data-id="${tab.id}"]`);
+        if (tabEl) {
+          const titleEl = tabEl.querySelector('.tab-title');
+          if (titleEl && tab.title) {
+            titleEl.textContent = tab.title;
+            titleEl.title = tab.title;
+          }
+          tabEl.classList.toggle('loading', !!tab.is_loading);
+        }
+      }
+
+      const activeId = state.activeTabId ?? state.active_tab_id;
+      if (tab.id === activeId) {
+        updateNav();
+      }
     }
   };
 

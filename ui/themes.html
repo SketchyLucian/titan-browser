@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Themes - Titan Browser</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    html, body {
+      filter: none !important;
+    }
+
+    :root,
+    body.theme-titan-dark {
+      --bg-base: #0f1015;
+      --bg-surface: #171821;
+      --bg-elevated: #20222e;
+      --bg-input: #12131a;
+      --border-subtle: #272a38;
+      --border-focus: #4e7cf6;
+      --text-main: #f0f2f8;
+      --text-muted: #8d92a6;
+      --text-dim: #5d6175;
+      --accent-primary: #4e7cf6;
+      --accent-cyan: #38bdf8;
+    }
+
+    body.theme-midnight {
+      --bg-base: #000000;
+      --bg-surface: #0a0a0d;
+      --bg-elevated: #15151a;
+      --bg-input: #0d0d12;
+      --border-subtle: #22222b;
+      --border-focus: #3b82f6;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent-primary: #3b82f6;
+      --accent-cyan: #60a5fa;
+    }
+
+    body.theme-titan-light {
+      --bg-base: #f1f5f9;
+      --bg-surface: #ffffff;
+      --bg-elevated: #e2e8f0;
+      --bg-input: #f8fafc;
+      --border-subtle: #cbd5e1;
+      --border-focus: #2563eb;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --accent-primary: #2563eb;
+      --accent-cyan: #0284c7;
+    }
+
+    body.theme-cyber-neon {
+      --bg-base: #0d0b18;
+      --bg-surface: #151226;
+      --bg-elevated: #211c3b;
+      --bg-input: #120f20;
+      --border-subtle: #362c60;
+      --border-focus: #a855f7;
+      --text-main: #f5f3ff;
+      --text-muted: #a79ec7;
+      --text-dim: #6c638e;
+      --accent-primary: #a855f7;
+      --accent-cyan: #06b6d4;
+    }
+
+    body.theme-nordic {
+      --bg-base: #0f171c;
+      --bg-surface: #162027;
+      --bg-elevated: #1e2c36;
+      --bg-input: #121b21;
+      --border-subtle: #293d4c;
+      --border-focus: #14b8a6;
+      --text-main: #f0fdfa;
+      --text-muted: #94a3b8;
+      --text-dim: #5c7080;
+      --accent-primary: #0d9488;
+      --accent-cyan: #2dd4bf;
+    }
+
+    body.theme-amber {
+      --bg-base: #141210;
+      --bg-surface: #1d1916;
+      --bg-elevated: #2c2621;
+      --bg-input: #171412;
+      --border-subtle: #3f362e;
+      --border-focus: #f59e0b;
+      --text-main: #fffbeb;
+      --text-muted: #a89f91;
+      --text-dim: #70685c;
+      --accent-primary: #d97706;
+      --accent-cyan: #f59e0b;
+    }
+
+    body {
+      background: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 40px 24px 80px;
+      overflow-y: auto;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    .settings-container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .header-icon-box {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: rgba(78, 124, 246, 0.12);
+      border: 1px solid rgba(78, 124, 246, 0.25);
+      color: var(--accent-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .header-title {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+    }
+
+    .header-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 28px;
+    }
+
+    .nav-tab-btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .nav-tab-btn:hover {
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .nav-tab-btn.active {
+      background: var(--accent-primary);
+      border-color: var(--accent-primary);
+      color: #ffffff;
+    }
+
+    /* Sections */
+    .settings-section {
+      margin-bottom: 36px;
+    }
+
+    .section-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .section-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    /* Themes Grid */
+    .themes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+
+    .theme-card {
+      background: var(--bg-surface);
+      border: 2px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .theme-card:hover {
+      border-color: rgba(78, 124, 246, 0.4);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+    }
+
+    .theme-card.active {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 1px var(--accent-primary), 0 8px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    .theme-preview-box {
+      height: 74px;
+      border-radius: 8px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      box-sizing: border-box;
+    }
+
+    .preview-mock-bar {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      height: 16px;
+    }
+
+    .preview-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    .preview-mock-tab {
+      height: 14px;
+      width: 52px;
+      border-radius: 3px 3px 0 0;
+    }
+
+    .preview-mock-body {
+      height: 32px;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0 8px;
+    }
+
+    .preview-accent-pill {
+      width: 24px;
+      height: 10px;
+      border-radius: 4px;
+    }
+
+    .theme-info {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .theme-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .theme-check {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--accent-primary);
+      color: #ffffff;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .theme-card.active .theme-check {
+      display: flex;
+    }
+
+    /* Accent Swatches */
+    .accent-swatches {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    .accent-swatch {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 3px solid transparent;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+
+    .accent-swatch:hover {
+      transform: scale(1.15);
+    }
+
+    .accent-swatch.active {
+      border-color: #ffffff;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Setting Card Rows */
+    .setting-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+      transition: border-color 0.15s ease;
+    }
+
+    .setting-card:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .setting-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex: 1;
+    }
+
+    .setting-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: var(--bg-elevated);
+      color: var(--accent-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .setting-title {
+      font-size: 14.5px;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 2px;
+    }
+
+    .setting-desc {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* Switch Component */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      transition: 0.2s;
+      border-radius: 24px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #ffffff;
+      transition: 0.2s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--accent-primary);
+      border-color: var(--accent-primary);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    .settings-footer {
+      text-align: center;
+      margin-top: 48px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body class="theme-titan-dark">
+  <div class="settings-container">
+    <!-- Header -->
+    <div class="settings-header">
+      <div class="header-left">
+        <div class="header-icon-box">
+          <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="header-title">Themes &amp; Appearance</h1>
+          <p class="header-subtitle">Customize browser themes, accent highlights, and web page contrast</p>
+        </div>
+      </div>
+      <button class="nav-tab-btn" onclick="sendIpc({ type: 'OpenSettings' })" title="Go to General Settings">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        General Settings
+      </button>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs">
+      <button class="nav-tab-btn" onclick="sendIpc({ type: 'OpenSettings' })">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        General Settings
+      </button>
+      <button class="nav-tab-btn active">
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
+        </svg>
+        Themes &amp; Appearance
+      </button>
+    </div>
+
+    <!-- Section 1: Themes Grid -->
+    <div class="settings-section">
+      <div class="section-title-row">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="var(--accent-primary)" stroke-width="2" fill="none">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
+        </svg>
+        <h2 class="section-title">Browser Theme</h2>
+      </div>
+      <p class="section-desc">Select a theme to instantly restyle the entire browser chrome, tabs, and web pages.</p>
+
+      <div class="themes-grid">
+        <!-- 1. Titan Dark -->
+        <div class="theme-card active" data-theme="titan-dark" onclick="selectTheme('titan-dark')">
+          <div class="theme-preview-box" style="background: #0f1015; border: 1px solid #272a38;">
+            <div class="preview-mock-bar">
+              <div class="preview-dot" style="background: rgba(255,255,255,0.3);"></div>
+              <div class="preview-mock-tab" style="background: #20222e; border: 1px solid #272a38; border-bottom: none;"></div>
+            </div>
+            <div class="preview-mock-body" style="background: #171821; border: 1px solid #272a38;">
+              <div class="preview-accent-pill" style="background: #4e7cf6;"></div>
+            </div>
+          </div>
+          <div class="theme-info">
+            <span class="theme-name">Titan Dark</span>
+            <div class="theme-check">
+              <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="3" fill="none"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Midnight OLED -->
+        <div class="theme-card" data-theme="midnight" onclick="selectTheme('midnight')">
+          <div class="theme-preview-box" style="background: #000000; border: 1px solid #22222b;">
+            <div class="preview-mock-bar">
+              <div class="preview-dot" style="background: rgba(255,255,255,0.3);"></div>
+              <div class="preview-mock-tab" style="background: #15151a; border: 1px solid #22222b; border-bottom: none;"></div>
+            </div>
+            <div class="preview-mock-body" style="background: #0a0a0d; border: 1px solid #22222b;">
+              <div class="preview-accent-pill" style="background: #3b82f6;"></div>
+            </div>
+          </div>
+          <div class="theme-info">
+            <span class="theme-name">Midnight OLED</span>
+            <div class="theme-check">
+              <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="3" fill="none"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Titan Daylight -->
+        <div class="theme-card" data-theme="titan-light" onclick="selectTheme('titan-light')">
+          <div class="theme-preview-box" style="background: #f1f5f9; border: 1px solid #cbd5e1;">
+            <div class="preview-mock-bar">
+              <div class="preview-dot" style="background: rgba(0,0,0,0.25);"></div>
+              <div class="preview-mock-tab" style="background: #ffffff; border: 1px solid #cbd5e1; border-bottom: none;"></div>
+            </div>
+            <div class="preview-mock-body" style="background: #ffffff; border: 1px solid #cbd5e1;">
+              <div class="preview-accent-pill" style="background: #2563eb;"></div>
+            </div>
+          </div>
+          <div class="theme-info">
+            <span class="theme-name">Titan Daylight</span>
+            <div class="theme-check">
+              <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="3" fill="none"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Cyber Neon -->
+        <div class="theme-card" data-theme="cyber-neon" onclick="selectTheme('cyber-neon')">
+          <div class="theme-preview-box" style="background: #0d0b18; border: 1px solid #362c60;">
+            <div class="preview-mock-bar">
+              <div class="preview-dot" style="background: #a855f7;"></div>
+              <div class="preview-mock-tab" style="background: #211c3b; border: 1px solid #362c60; border-bottom: none;"></div>
+            </div>
+            <div class="preview-mock-body" style="background: #151226; border: 1px solid #362c60;">
+              <div class="preview-accent-pill" style="background: #06b6d4;"></div>
+            </div>
+          </div>
+          <div class="theme-info">
+            <span class="theme-name">Cyber Neon</span>
+            <div class="theme-check">
+              <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="3" fill="none"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Nordic Slate -->
+        <div class="theme-card" data-theme="nordic" onclick="selectTheme('nordic')">
+          <div class="theme-preview-box" style="background: #0f171c; border: 1px solid #293d4c;">
+            <div class="preview-mock-bar">
+              <div class="preview-dot" style="background: #2dd4bf;"></div>
+              <div class="preview-mock-tab" style="background: #1e2c36; border: 1px solid #293d4c; border-bottom: none;"></div>
+            </div>
+            <div class="preview-mock-body" style="background: #162027; border: 1px solid #293d4c;">
+              <div class="preview-accent-pill" style="background: #2dd4bf;"></div>
+            </div>
+          </div>
+          <div class="theme-info">
+            <span class="theme-name">Nordic Slate</span>
+            <div class="theme-check">
+              <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="3" fill="none"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. Amber Sunset -->
+        <div class="theme-card" data-theme="amber" onclick="selectTheme('amber')">
+          <div class="theme-preview-box" style="background: #141210; border: 1px solid #3f362e;">
+            <div class="preview-mock-bar">
+              <div class="preview-dot" style="background: #f59e0b;"></div>
+              <div class="preview-mock-tab" style="background: #2c2621; border: 1px solid #3f362e; border-bottom: none;"></div>
+            </div>
+            <div class="preview-mock-body" style="background: #1d1916; border: 1px solid #3f362e;">
+              <div class="preview-accent-pill" style="background: #f59e0b;"></div>
+            </div>
+          </div>
+          <div class="theme-info">
+            <span class="theme-name">Amber Sunset</span>
+            <div class="theme-check">
+              <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="3" fill="none"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Accent Color Presets -->
+      <div class="section-title-row" style="margin-top: 28px;">
+        <h3 class="section-title" style="font-size: 14.5px;">Accent Highlight Color</h3>
+      </div>
+      <div class="accent-swatches" id="accentSwatches">
+        <div class="accent-swatch active" style="background: #4e7cf6;" data-color="#4e7cf6" onclick="selectAccent('#4e7cf6')" title="Titan Blue"></div>
+        <div class="accent-swatch" style="background: #38bdf8;" data-color="#38bdf8" onclick="selectAccent('#38bdf8')" title="Cyber Cyan"></div>
+        <div class="accent-swatch" style="background: #10b981;" data-color="#10b981" onclick="selectAccent('#10b981')" title="Emerald Green"></div>
+        <div class="accent-swatch" style="background: #a855f7;" data-color="#a855f7" onclick="selectAccent('#a855f7')" title="Royal Purple"></div>
+        <div class="accent-swatch" style="background: #f59e0b;" data-color="#f59e0b" onclick="selectAccent('#f59e0b')" title="Amber Gold"></div>
+        <div class="accent-swatch" style="background: #ff4757;" data-color="#ff4757" onclick="selectAccent('#ff4757')" title="Crimson Red"></div>
+      </div>
+    </div>
+
+    <!-- Section 2: Universal Webpage Theme Adaptation -->
+    <div class="settings-section">
+      <div class="section-title-row">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="var(--accent-primary)" stroke-width="2" fill="none">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+        <h2 class="section-title">Web Content Theme Adaptation</h2>
+      </div>
+
+      <div class="setting-card">
+        <div class="setting-left">
+          <div class="setting-icon">
+            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+          </div>
+          <div>
+            <div class="setting-title">Universal Webpage Theme Adaptation</div>
+            <div class="setting-desc">Automatically adapts web pages without native dark/light support to match your active theme.</div>
+          </div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="darkReaderToggle" onchange="toggleDarkReader(this.checked)" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="settings-footer">
+      Titan Browser &bull; Themes &amp; Appearance &bull; Built with Rust, Tao &amp; Wry
+    </div>
+  </div>
+
+  <script>
+    function sendIpc(msg) {
+      if (window.ipc && window.ipc.postMessage) {
+        window.ipc.postMessage(JSON.stringify(msg));
+      } else {
+        console.log('IPC Out:', msg);
+      }
+    }
+
+    function selectTheme(themeId) {
+      document.querySelectorAll('.theme-card').forEach((c) => {
+        c.classList.toggle('active', c.getAttribute('data-theme') === themeId);
+      });
+      document.body.className = `theme-${themeId}`;
+      sendIpc({ type: 'SetTheme', theme: themeId });
+    }
+
+    function selectAccent(color) {
+      document.querySelectorAll('.accent-swatch').forEach((s) => {
+        s.classList.toggle('active', s.getAttribute('data-color') === color);
+      });
+      document.documentElement.style.setProperty('--accent-primary', color);
+      document.documentElement.style.setProperty('--border-focus', color);
+      sendIpc({ type: 'SetAccentColor', color: color });
+    }
+
+    function toggleDarkReader(enabled) {
+      sendIpc({
+        type: 'ToggleModule',
+        module_id: 'dark_reader',
+        enabled: enabled
+      });
+    }
+
+    // Init from backend state
+    window.initSettings = function(state) {
+      if (state.settings) {
+        const theme = state.settings.theme || 'titan-dark';
+        document.body.className = `theme-${theme}`;
+        document.querySelectorAll('.theme-card').forEach((c) => {
+          c.classList.toggle('active', c.getAttribute('data-theme') === theme);
+        });
+
+        const accent = state.settings.accent_color || '#4e7cf6';
+        document.documentElement.style.setProperty('--accent-primary', accent);
+        document.documentElement.style.setProperty('--border-focus', accent);
+        document.querySelectorAll('.accent-swatch').forEach((s) => {
+          s.classList.toggle('active', s.getAttribute('data-color') === accent);
+        });
+      }
+
+      if (state.modules) {
+        const darkMod = state.modules.find(m => m.id === 'dark_reader');
+        const drToggle = document.getElementById('darkReaderToggle');
+        if (drToggle && darkMod) {
+          drToggle.checked = !!darkMod.enabled;
+        }
+      }
+    };
+  </script>
+</body>
+</html>

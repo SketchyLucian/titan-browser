@@ -6,7 +6,11 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-:root {
+/* ==========================================================================
+   Theme Variables & Color Palettes
+   ========================================================================== */
+:root,
+body.theme-titan-dark {
   --bg-base: #111217;
   --bg-surface: #181920;
   --bg-elevated: #22242f;
@@ -29,7 +33,124 @@
   --accent-green: #10b981;
   --accent-rust: #f97316;
 
-  --chrome-height: 102px;
+  --chrome-height: 76px;
+}
+
+/* 1. Midnight OLED (True Black) */
+body.theme-midnight {
+  --bg-base: #000000;
+  --bg-surface: #0a0a0d;
+  --bg-elevated: #15151a;
+  --bg-tab-active: #1e1e26;
+  --bg-tab-hover: #121217;
+  --bg-input: #0d0d12;
+  --bg-input-focus: #161622;
+  
+  --border-subtle: #22222b;
+  --border-focus: #3b82f6;
+  
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  
+  --accent-blue: #3b82f6;
+  --accent-cyan: #60a5fa;
+  --accent-gold: #f59e0b;
+  --accent-green: #10b981;
+}
+
+/* 2. Titan Daylight (Light Theme) */
+body.theme-titan-light {
+  --bg-base: #e6ebf1;
+  --bg-surface: #ffffff;
+  --bg-elevated: #e2e8f0;
+  --bg-tab-active: #ffffff;
+  --bg-tab-hover: #e8edf4;
+  --bg-input: #f1f5f9;
+  --bg-input-focus: #ffffff;
+  
+  --border-subtle: #cbd5e1;
+  --border-focus: #2563eb;
+  
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-dim: #94a3b8;
+  
+  --accent-blue: #2563eb;
+  --accent-cyan: #0284c7;
+  --accent-red: #ef4444;
+  --accent-gold: #d97706;
+  --accent-green: #059669;
+}
+
+/* 3. Cyber Neon (Synthwave Purple & Cyan) */
+body.theme-cyber-neon {
+  --bg-base: #0d0b18;
+  --bg-surface: #151226;
+  --bg-elevated: #211c3b;
+  --bg-tab-active: #2d2454;
+  --bg-tab-hover: #1c1733;
+  --bg-input: #120f20;
+  --bg-input-focus: #1e1638;
+  
+  --border-subtle: #362c60;
+  --border-focus: #a855f7;
+  
+  --text-main: #f5f3ff;
+  --text-muted: #a79ec7;
+  --text-dim: #6c638e;
+  
+  --accent-blue: #a855f7;
+  --accent-cyan: #06b6d4;
+  --accent-red: #f43f5e;
+  --accent-gold: #fbbf24;
+  --accent-green: #34d399;
+}
+
+/* 4. Nordic Slate (Deep Slate & Teal) */
+body.theme-nordic {
+  --bg-base: #0f171c;
+  --bg-surface: #162027;
+  --bg-elevated: #1e2c36;
+  --bg-tab-active: #283a47;
+  --bg-tab-hover: #1a262e;
+  --bg-input: #121b21;
+  --bg-input-focus: #1c2a33;
+  
+  --border-subtle: #293d4c;
+  --border-focus: #14b8a6;
+  
+  --text-main: #f0fdfa;
+  --text-muted: #94a3b8;
+  --text-dim: #5c7080;
+  
+  --accent-blue: #0d9488;
+  --accent-cyan: #2dd4bf;
+  --accent-gold: #f59e0b;
+  --accent-green: #10b981;
+}
+
+/* 5. Amber Sunset (Warm Dark & Gold) */
+body.theme-amber {
+  --bg-base: #141210;
+  --bg-surface: #1d1916;
+  --bg-elevated: #2c2621;
+  --bg-tab-active: #3b322b;
+  --bg-tab-hover: #241f1b;
+  --bg-input: #171412;
+  --bg-input-focus: #26201b;
+  
+  --border-subtle: #3f362e;
+  --border-focus: #f59e0b;
+  
+  --text-main: #fffbeb;
+  --text-muted: #a89f91;
+  --text-dim: #70685c;
+  
+  --accent-blue: #d97706;
+  --accent-cyan: #f59e0b;
+  --accent-gold: #fbbf24;
+  --accent-green: #84cc16;
 }
 
 body {
@@ -39,6 +160,7 @@ body {
   height: 100vh;
   width: 100vw;
   font-size: 13px;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .browser-chrome {
@@ -51,7 +173,7 @@ body {
 }
 
 /* ==========================================================================
-   1. Tab Strip & Integrated Modern Titlebar
+   1. Tab Strip & Integrated Modern Titlebar (Row 1: 38px)
    ========================================================================== */
 .tab-strip {
   display: flex;
@@ -73,7 +195,12 @@ body {
   font-weight: 800;
   letter-spacing: 1.5px;
   flex-shrink: 0;
-  cursor: default;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.brand-logo:hover {
+  opacity: 0.85;
 }
 
 .icon-logo {
@@ -122,7 +249,7 @@ body {
 
 .tab-item.active {
   background: var(--bg-tab-active);
-  color: #ffffff;
+  color: var(--text-main);
   border-color: var(--border-subtle);
   font-weight: 500;
 }
@@ -185,7 +312,7 @@ body {
 
 .tab-close-btn:hover {
   background: rgba(255, 255, 255, 0.15);
-  color: #fff;
+  color: var(--text-main);
 }
 
 .new-tab-btn {
@@ -206,7 +333,7 @@ body {
 
 .new-tab-btn:hover {
   background: var(--bg-elevated);
-  color: #ffffff;
+  color: var(--text-main);
 }
 
 /* Draggable Region */
@@ -238,8 +365,8 @@ body {
 }
 
 .win-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: rgba(125, 125, 125, 0.15);
+  color: var(--text-main);
 }
 
 .win-btn.win-close:hover {
@@ -248,7 +375,7 @@ body {
 }
 
 /* ==========================================================================
-   2. Nav Bar & Omnibar
+   2. Nav Bar & Omnibar (Row 2: 38px)
    ========================================================================== */
 .nav-bar {
   display: flex;
@@ -282,7 +409,7 @@ body {
 
 .nav-btn:hover:not(:disabled) {
   background: var(--bg-elevated);
-  color: #ffffff;
+  color: var(--text-main);
 }
 
 .nav-btn:disabled {
@@ -338,7 +465,7 @@ body {
   background: transparent;
   border: none;
   outline: none;
-  color: #ffffff !important;
+  color: var(--text-main);
   font-size: 12.5px;
   letter-spacing: 0.2px;
 }
@@ -383,64 +510,42 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* Action Controls */
+/* Action Controls (Toolbar Right) */
 .action-controls {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 26px;
-  padding: 0 6px;
+  height: 28px;
+  padding: 0 7px;
   border-radius: 5px;
   background: transparent;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
   font-size: 13px;
-  font-weight: bold;
+  font-weight: 500;
   transition: all 0.15s ease;
 }
 
 .action-btn:hover {
   background: var(--bg-elevated);
-  color: #ffffff;
+  color: var(--text-main);
 }
 
-/* Dark Mode Toggle Button */
-.dark-mode-toggle-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 9px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+.settings-btn {
+  width: 28px;
+  padding: 0;
   color: var(--text-muted);
-  transition: all 0.2s ease;
 }
 
-.dark-mode-toggle-btn:hover {
-  background: var(--bg-elevated);
-  color: #ffffff;
-  border-color: #4a4f66;
-}
-
-.dark-mode-toggle-btn.active {
-  background: rgba(78, 124, 246, 0.18);
-  border-color: var(--accent-blue);
-  color: #60a5fa;
-  box-shadow: 0 0 10px rgba(78, 124, 246, 0.25);
-}
-
-.dark-btn-text {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
+.settings-btn:hover {
+  color: var(--accent-cyan);
 }
 
 .zoom-level {
@@ -458,15 +563,19 @@ body {
 }
 
 /* ==========================================================================
-   3. Bookmarks Bar
+   3. Bookmarks Bar (Collapsed when empty / hidden)
    ========================================================================== */
 .bookmarks-bar {
-  display: flex;
+  display: none; /* Collapsed by default when no bookmarks */
   align-items: center;
   height: 26px;
   background: var(--bg-surface);
   padding: 0 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.bookmarks-bar.visible {
+  display: flex;
 }
 
 .bookmarks-list {

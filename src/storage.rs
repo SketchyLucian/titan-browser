@@ -1,4 +1,4 @@
-use crate::ipc::{Bookmark, BrowserModule};
+use crate::ipc::{Bookmark, BrowserModule, BrowserSettings};
 use std::fs;
 use std::path::PathBuf;
 
@@ -13,6 +13,7 @@ pub fn get_app_data_dir() -> PathBuf {
 pub struct StorageManager {
     bookmarks_file: PathBuf,
     modules_file: PathBuf,
+    settings_file: PathBuf,
 }
 
 impl StorageManager {
@@ -22,6 +23,7 @@ impl StorageManager {
         Self {
             bookmarks_file: dir.join("bookmarks.json"),
             modules_file: dir.join("modules.json"),
+            settings_file: dir.join("settings.json"),
         }
     }
 
@@ -31,38 +33,7 @@ impl StorageManager {
                 return bookmarks;
             }
         }
-
-        // Default initial preloaded bookmarks
-        vec![
-            Bookmark {
-                title: "YouTube".into(),
-                url: "https://www.youtube.com".into(),
-            },
-            Bookmark {
-                title: "Google".into(),
-                url: "https://www.google.com".into(),
-            },
-            Bookmark {
-                title: "Rust Docs".into(),
-                url: "https://doc.rust-lang.org".into(),
-            },
-            Bookmark {
-                title: "GitHub".into(),
-                url: "https://github.com".into(),
-            },
-            Bookmark {
-                title: "Reddit".into(),
-                url: "https://www.reddit.com".into(),
-            },
-            Bookmark {
-                title: "Wikipedia".into(),
-                url: "https://www.wikipedia.org".into(),
-            },
-            Bookmark {
-                title: "Hacker News".into(),
-                url: "https://news.ycombinator.com".into(),
-            },
-        ]
+        vec![]
     }
 
     pub fn save_bookmarks(&self, bookmarks: &[Bookmark]) {
@@ -102,6 +73,21 @@ impl StorageManager {
             .collect();
         if let Ok(json) = serde_json::to_string_pretty(&filtered) {
             let _ = fs::write(&self.modules_file, json);
+        }
+    }
+
+    pub fn load_settings(&self) -> BrowserSettings {
+        if let Ok(data) = fs::read_to_string(&self.settings_file) {
+            if let Ok(settings) = serde_json::from_str::<BrowserSettings>(&data) {
+                return settings;
+            }
+        }
+        BrowserSettings::default()
+    }
+
+    pub fn save_settings(&self, settings: &BrowserSettings) {
+        if let Ok(json) = serde_json::to_string_pretty(settings) {
+            let _ = fs::write(&self.settings_file, json);
         }
     }
 }
