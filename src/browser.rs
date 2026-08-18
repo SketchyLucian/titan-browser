@@ -369,7 +369,11 @@ impl BrowserManager {
         );
 
         let content_bounds = self.get_content_bounds();
-        let bg_color = self.get_theme_background_color();
+        let bg_color = if is_settings {
+            self.get_theme_background_color()
+        } else {
+            (255, 255, 255, 255)
+        };
 
         let builder = WebViewBuilder::new()
             .with_bounds(content_bounds)
