@@ -199,6 +199,8 @@ impl BrowserManager {
             (function() {{
                 const isLight = {is_light};
                 const forceAdaptation = {force_adaptation};
+                const targetMode = isLight ? 'light' : 'dark';
+                const removeMode = isLight ? 'dark' : 'light';
                 const host = (window.location.hostname || '').toLowerCase();
                 const href = (window.location.href || '').toLowerCase();
 
@@ -213,60 +215,183 @@ impl BrowserManager {
                 // If on internal / blank URL, stop here
                 if (!host || href.startsWith('titan://') || href.startsWith('about:')) return;
 
-                // 2. Standard prefers-color-scheme media query patching for JS-driven sites
+                // 2. Dynamic matchMedia & prefers-color-scheme Event System
                 try {{
                     window._titanIsLight = isLight;
+                    window._titanMqlListeners = window._titanMqlListeners || [];
+
                     if (!window._titanMatchMediaPatched) {{
                         window._titanMatchMediaPatched = true;
-                        const origMM = window.matchMedia;
+                        const origMM = window.matchMedia ? window.matchMedia.bind(window) : null;
+
                         window.matchMedia = function(q) {{
-                            if (typeof q === 'string') {{
-                                if (q.includes('prefers-color-scheme: dark')) {{
-                                    return {{
-                                        matches: !window._titanIsLight,
-                                        media: q,
-                                        onchange: null,
-                                        addListener: function() {{}},
-                                        removeListener: function() {{}},
-                                        addEventListener: function() {{}},
-                                        removeEventListener: function() {{}},
-                                        dispatchEvent: function() {{ return false; }}
-                                    }};
-                                }}
-                                if (q.includes('prefers-color-scheme: light')) {{
-                                    return {{
-                                        matches: !!window._titanIsLight,
-                                        media: q,
-                                        onchange: null,
-                                        addListener: function() {{}},
-                                        removeListener: function() {{}},
-                                        addEventListener: function() {{}},
-                                        removeEventListener: function() {{}},
-                                        dispatchEvent: function() {{ return false; }}
-                                    }};
-                                }}
+                            const queryStr = String(q || '');
+                            if (queryStr.includes('prefers-color-scheme')) {{
+                                const isDarkQuery = queryStr.includes('dark');
+                                const isLightQuery = queryStr.includes('light');
+
+                                const mql = {{
+                                    get matches() {{
+                                        return isDarkQuery ? !window._titanIsLight : (isLightQuery ? !!window._titanIsLight : false);
+                                    }},
+                                    media: queryStr,
+                                    onchange: null,
+                                    addListener: function(fn) {{
+                                        if (typeof fn === 'function' && !window._titanMqlListeners.includes(fn)) {{
+                                            window._titanMqlListeners.push(fn);
+                                        }}
+                                    }},
+                                    removeListener: function(fn) {{
+                                        window._titanMqlListeners = window._titanMqlListeners.filter(l => l !== fn);
+                                    }},
+                                    addEventListener: function(type, fn) {{
+                                        if (type === 'change' && typeof fn === 'function' && !window._titanMqlListeners.includes(fn)) {{
+                                            window._titanMqlListeners.push(fn);
+                                        }}
+                                    }},
+                                    removeEventListener: function(type, fn) {{
+                                        if (type === 'change') {{
+                                            window._titanMqlListeners = window._titanMqlListeners.filter(l => l !== fn);
+                                        }}
+                                    }},
+                                    dispatchEvent: function(e) {{
+                                        window._titanMqlListeners.forEach(fn => {{
+                                            try {{ fn(e); }} catch(err) {{}}
+                                        }});
+                                        return true;
+                                    }}
+                                }};
+                                return mql;
                             }}
-                            return origMM ? origMM.call(window, q) : {{ matches: false, media: q }};
+                            return origMM ? origMM(queryStr) : {{ matches: false, media: queryStr, addListener: function(){{}}, removeListener: function(){{}}, addEventListener: function(){{}}, removeEventListener: function(){{}} }};
                         }};
+                    }}
+
+                    // Dispatch change event to all registered reactive framework listeners (React, Vue, Tailwind, next-themes)
+                    if (window._titanMqlListeners && window._titanMqlListeners.length > 0) {{
+                        const eventObj = {{
+                            matches: !isLight,
+                            media: '(prefers-color-scheme: dark)',
+                            type: 'change',
+                            currentTarget: window,
+                            target: window
+                        }};
+                        window._titanMqlListeners.forEach(fn => {{
+                            try {{ fn(eventObj); }} catch(e) {{}}
+                        }});
                     }}
                 }} catch(e) {{}}
 
-                // 3. YouTube specific attribute
-                const isYouTube = host.includes('youtube.com') || host.includes('youtu.be');
-                if (isYouTube) {{
+                // 3. Document Root color-scheme & Meta Tag
+                try {{
+                    if (document.documentElement) {{
+                        document.documentElement.style.colorScheme = targetMode;
+                    }}
+                    if (document.head) {{
+                        let meta = document.querySelector('meta[name="color-scheme"]');
+                        if (!meta) {{
+                            meta = document.createElement('meta');
+                            meta.name = 'color-scheme';
+                            document.head.appendChild(meta);
+                        }}
+                        meta.content = targetMode;
+                    }}
+                }} catch(e) {{}}
+
+                // 4. Comprehensive Framework & Library Integration (VitePress, Docusaurus, Tailwind, Starlight, Astro, Next.js, Bootstrap)
+                function applyFrameworkThemes() {{
                     try {{
+                        const html = document.documentElement;
+                        const body = document.body;
+
+                        if (html) {{
+                            html.classList.remove(removeMode);
+                            html.classList.add(targetMode);
+
+                            // Data attribute conventions
+                            ['data-theme', 'data-color-mode', 'data-bs-theme', 'data-mode', 'data-theme-mode'].forEach(attr => {{
+                                if (html.hasAttribute(attr)) {{
+                                    html.setAttribute(attr, targetMode);
+                                }}
+                            }});
+
+                            // VitePress & Starlight explicit class switches
+                            if (html.classList.contains('dark') || html.classList.contains('light')) {{
+                                html.classList.remove(removeMode);
+                                html.classList.add(targetMode);
+                            }}
+                        }}
+
+                        if (body) {{
+                            if (body.classList.contains('dark') || body.classList.contains('light')) {{
+                                body.classList.remove(removeMode);
+                                body.classList.add(targetMode);
+                            }}
+                            ['data-theme', 'data-color-mode', 'data-bs-theme', 'data-mode'].forEach(attr => {{
+                                if (body.hasAttribute(attr)) {{
+                                    body.setAttribute(attr, targetMode);
+                                }}
+                            }});
+                        }}
+
+                        // Synchronize client-side storage keys for documentation frameworks
+                        const storageKeys = [
+                            'vitepress-theme-appearance',
+                            'theme',
+                            'color-theme',
+                            'color-mode',
+                            'docusaurus.theme',
+                            'starlight-theme',
+                            'astro-theme',
+                            'tailwind-theme',
+                            'next-themes-theme',
+                            'theme-preference',
+                            'chakra-ui-color-mode',
+                            'mantine-color-scheme',
+                            'theme-choice'
+                        ];
+                        storageKeys.forEach(k => {{
+                            try {{
+                                localStorage.setItem(k, targetMode);
+                            }} catch(e) {{}}
+                        }});
+                    }} catch(e) {{}}
+                }}
+
+                applyFrameworkThemes();
+                if (document.readyState === 'loading') {{
+                    document.addEventListener('DOMContentLoaded', applyFrameworkThemes, {{ once: true }});
+                }}
+
+                // 5. Major Website Adaptations (YouTube, GitHub, Reddit, Wikipedia)
+                try {{
+                    const isYouTube = host.includes('youtube.com') || host.includes('youtu.be');
+                    if (isYouTube && document.documentElement) {{
                         if (isLight) {{
                             document.documentElement.removeAttribute('dark');
                         }} else {{
                             document.documentElement.setAttribute('dark', 'true');
                         }}
-                    }} catch(e) {{}}
-                }}
+                    }}
 
-                // 4. ONLY if Universal Webpage Theme Adaptation is explicitly ENABLED
+                    const isGitHub = host.includes('github.com');
+                    if (isGitHub && document.documentElement) {{
+                        document.documentElement.setAttribute('data-color-mode', targetMode);
+                        document.documentElement.setAttribute('data-dark-theme', 'dark');
+                        document.documentElement.setAttribute('data-light-theme', 'light');
+                    }}
+
+                    const isWikipedia = host.includes('wikipedia.org');
+                    if (isWikipedia && document.documentElement) {{
+                        document.documentElement.classList.remove(isLight ? 'skin-theme-clientpref-night' : 'skin-theme-clientpref-day');
+                        document.documentElement.classList.add(isLight ? 'skin-theme-clientpref-day' : 'skin-theme-clientpref-night');
+                    }}
+                }} catch(e) {{}}
+
+                // 6. Universal Webpage Theme Adaptation (Dark Reader) for light-only sites
                 if (forceAdaptation) {{
                     function adaptTheme() {{
-                        const isNativelyAdaptive = host.includes('google.') || host.includes('youtube.com') || host.includes('youtu.be') || host.includes('github.com') || host.includes('gitlab.com') || host.includes('reddit.com') || host.includes('duckduckgo.com') || host.includes('bing.com') || host.includes('x.com') || host.includes('twitter.com');
+                        const isNativelyAdaptive = host.includes('google.') || host.includes('youtube.com') || host.includes('youtu.be') || host.includes('github.com') || host.includes('gitlab.com') || host.includes('reddit.com') || host.includes('duckduckgo.com') || host.includes('bing.com') || host.includes('x.com') || host.includes('twitter.com') || host.includes('tauri.app') || host.includes('vitepress') || host.includes('docusaurus');
                         if (isNativelyAdaptive) return;
 
                         let el = document.getElementById('titan-theme-adaptation-style');
