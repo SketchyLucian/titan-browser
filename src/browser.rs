@@ -274,7 +274,7 @@ impl BrowserManager {
                             if (!el) {{
                                 el = document.createElement('style');
                                 el.id = 'titan-theme-adaptation-style';
-                                el.textContent = 'html {{ filter: invert(90%) hue-rotate(180deg) !important; background: #111 !important; }} img, video, iframe, canvas, svg, [style*="background-image"], .html5-video-player {{ filter: invert(100%) hue-rotate(180deg) !important; }}';
+                                el.textContent = 'html {{ filter: invert(100%) hue-rotate(180deg) contrast(96%) brightness(96%) !important; background-color: #121316 !important; }} img, video, canvas, svg, iframe, [style*="background-image"], .html5-video-player, picture {{ filter: invert(100%) hue-rotate(180deg) contrast(104%) brightness(104%) !important; }}';
                                 (document.head || document.documentElement).appendChild(el);
                             }}
                         }} else {{

@@ -11,24 +11,24 @@
    ========================================================================== */
 :root,
 body.theme-titan-dark {
-  --bg-base: #111217;
-  --bg-surface: #181920;
-  --bg-elevated: #22242f;
-  --bg-tab-active: #2a2d3b;
-  --bg-tab-hover: #1e202b;
-  --bg-input: #15161d;
-  --bg-input-focus: #1c1d27;
+  --bg-base: #0e1017;
+  --bg-surface: #151822;
+  --bg-elevated: #1e2230;
+  --bg-tab-active: #232838;
+  --bg-tab-hover: #1b1e2a;
+  --bg-input: #12141c;
+  --bg-input-focus: #181b26;
   
-  --border-subtle: #2b2e3d;
-  --border-focus: #4e7cf6;
+  --border-subtle: #292e40;
+  --border-focus: #3b82f6;
   
-  --text-main: #f0f2f8;
-  --text-muted: #8d92a6;
-  --text-dim: #5d6175;
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
   
-  --accent-blue: #4e7cf6;
+  --accent-blue: #3b82f6;
   --accent-cyan: #38bdf8;
-  --accent-red: #ff4757;
+  --accent-red: #ef4444;
   --accent-gold: #f59e0b;
   --accent-green: #10b981;
   --accent-rust: #f97316;
@@ -36,37 +36,37 @@ body.theme-titan-dark {
   --chrome-height: 76px;
 }
 
-/* 1. Midnight OLED (True Black) */
+/* 1. Midnight OLED (True Pure Black) */
 body.theme-midnight {
   --bg-base: #000000;
-  --bg-surface: #0a0a0d;
-  --bg-elevated: #15151a;
-  --bg-tab-active: #1e1e26;
-  --bg-tab-hover: #121217;
-  --bg-input: #0d0d12;
-  --bg-input-focus: #161622;
+  --bg-surface: #09090b;
+  --bg-elevated: #141417;
+  --bg-tab-active: #18181c;
+  --bg-tab-hover: #101014;
+  --bg-input: #08080a;
+  --bg-input-focus: #121216;
   
-  --border-subtle: #22222b;
-  --border-focus: #3b82f6;
+  --border-subtle: #27272a;
+  --border-focus: #60a5fa;
   
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --text-dim: #64748b;
+  --text-main: #ffffff;
+  --text-muted: #a1a1aa;
+  --text-dim: #71717a;
   
   --accent-blue: #3b82f6;
   --accent-cyan: #60a5fa;
-  --accent-gold: #f59e0b;
-  --accent-green: #10b981;
+  --accent-gold: #fbbf24;
+  --accent-green: #34d399;
 }
 
-/* 2. Titan Daylight (Light Theme) */
+/* 2. Titan Daylight (Crisp Light Theme) */
 body.theme-titan-light {
-  --bg-base: #e6ebf1;
-  --bg-surface: #ffffff;
-  --bg-elevated: #e2e8f0;
+  --bg-base: #e2e8f0;
+  --bg-surface: #f8fafc;
+  --bg-elevated: #ffffff;
   --bg-tab-active: #ffffff;
-  --bg-tab-hover: #e8edf4;
-  --bg-input: #f1f5f9;
+  --bg-tab-hover: #edf2f7;
+  --bg-input: #ffffff;
   --bg-input-focus: #ffffff;
   
   --border-subtle: #cbd5e1;
@@ -85,71 +85,71 @@ body.theme-titan-light {
 
 /* 3. Cyber Neon (Synthwave Purple & Cyan) */
 body.theme-cyber-neon {
-  --bg-base: #0d0b18;
-  --bg-surface: #151226;
-  --bg-elevated: #211c3b;
-  --bg-tab-active: #2d2454;
-  --bg-tab-hover: #1c1733;
-  --bg-input: #120f20;
-  --bg-input-focus: #1e1638;
+  --bg-base: #090714;
+  --bg-surface: #120e24;
+  --bg-elevated: #1d163a;
+  --bg-tab-active: #2b1f52;
+  --bg-tab-hover: #181232;
+  --bg-input: #0e0a1e;
+  --bg-input-focus: #1a1336;
   
-  --border-subtle: #362c60;
-  --border-focus: #a855f7;
+  --border-subtle: #433273;
+  --border-focus: #c084fc;
   
-  --text-main: #f5f3ff;
-  --text-muted: #a79ec7;
-  --text-dim: #6c638e;
+  --text-main: #faf5ff;
+  --text-muted: #c084fc;
+  --text-dim: #8169af;
   
   --accent-blue: #a855f7;
-  --accent-cyan: #06b6d4;
+  --accent-cyan: #22d3ee;
   --accent-red: #f43f5e;
   --accent-gold: #fbbf24;
   --accent-green: #34d399;
 }
 
-/* 4. Nordic Slate (Deep Slate & Teal) */
+/* 4. Nordic Slate (Deep Arctic & Emerald Teal) */
 body.theme-nordic {
-  --bg-base: #0f171c;
-  --bg-surface: #162027;
-  --bg-elevated: #1e2c36;
-  --bg-tab-active: #283a47;
-  --bg-tab-hover: #1a262e;
-  --bg-input: #121b21;
-  --bg-input-focus: #1c2a33;
+  --bg-base: #071015;
+  --bg-surface: #0e1920;
+  --bg-elevated: #152530;
+  --bg-tab-active: #1e3544;
+  --bg-tab-hover: #11202a;
+  --bg-input: #0a1318;
+  --bg-input-focus: #14242e;
   
-  --border-subtle: #293d4c;
-  --border-focus: #14b8a6;
+  --border-subtle: #234255;
+  --border-focus: #2dd4bf;
   
   --text-main: #f0fdfa;
-  --text-muted: #94a3b8;
-  --text-dim: #5c7080;
+  --text-muted: #5eead4;
+  --text-dim: #437684;
   
-  --accent-blue: #0d9488;
+  --accent-blue: #14b8a6;
   --accent-cyan: #2dd4bf;
   --accent-gold: #f59e0b;
   --accent-green: #10b981;
 }
 
-/* 5. Amber Sunset (Warm Dark & Gold) */
+/* 5. Amber Sunset (Warm Smoky Obsidian & Gold) */
 body.theme-amber {
-  --bg-base: #141210;
-  --bg-surface: #1d1916;
-  --bg-elevated: #2c2621;
-  --bg-tab-active: #3b322b;
-  --bg-tab-hover: #241f1b;
-  --bg-input: #171412;
-  --bg-input-focus: #26201b;
+  --bg-base: #110d0a;
+  --bg-surface: #1a140f;
+  --bg-elevated: #281e16;
+  --bg-tab-active: #3b2c20;
+  --bg-tab-hover: #221a13;
+  --bg-input: #130f0a;
+  --bg-input-focus: #211911;
   
-  --border-subtle: #3f362e;
+  --border-subtle: #4a3624;
   --border-focus: #f59e0b;
   
   --text-main: #fffbeb;
-  --text-muted: #a89f91;
-  --text-dim: #70685c;
+  --text-muted: #fbbf24;
+  --text-dim: #927556;
   
-  --accent-blue: #d97706;
-  --accent-cyan: #f59e0b;
-  --accent-gold: #fbbf24;
+  --accent-blue: #f59e0b;
+  --accent-cyan: #fbbf24;
+  --accent-gold: #f59e0b;
   --accent-green: #84cc16;
 }
 
@@ -251,7 +251,9 @@ body {
   background: var(--bg-tab-active);
   color: var(--text-main);
   border-color: var(--border-subtle);
+  border-top: 2px solid var(--accent-blue);
   font-weight: 500;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .tab-favicon {
