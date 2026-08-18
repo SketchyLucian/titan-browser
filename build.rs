@@ -29,6 +29,11 @@ fn main() {
     res.set("LegalCopyright", "Copyright (C) 2026 Titan Browser Team");
 
     res.compile().expect("Failed to compile Windows resource with icon");
+
+    let _ = std::process::Command::new("cmd")
+        .args(&["/c", "npm run build"])
+        .status();
+
     println!("cargo:rerun-if-changed=assets/icon.ico");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=ui/src/app.ts");

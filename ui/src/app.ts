@@ -219,7 +219,17 @@
   // Window Dragging & Double-Click Maximize
   function onDragStart(e: MouseEvent) {
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('input') || target.closest('.tab-item')) {
+    if (
+      target.closest('button') ||
+      target.closest('input') ||
+      target.closest('select') ||
+      target.closest('.tab-item') ||
+      target.closest('.bookmark-item') ||
+      target.closest('.brand-logo') ||
+      target.closest('.nav-controls') ||
+      target.closest('.tool-controls') ||
+      target.closest('.window-controls')
+    ) {
       return;
     }
 
@@ -230,8 +240,16 @@
     }
   }
 
-  windowDragRegion.addEventListener('mousedown', onDragStart);
-  tabStrip.addEventListener('mousedown', onDragStart);
+  const browserChromeEl = document.getElementById('browserChrome');
+  if (browserChromeEl) {
+    browserChromeEl.addEventListener('mousedown', onDragStart);
+  }
+  if (windowDragRegion) {
+    windowDragRegion.addEventListener('mousedown', onDragStart);
+  }
+  if (tabStrip) {
+    tabStrip.addEventListener('mousedown', onDragStart);
+  }
 
   // Navigation & Browser Actions
   newTabBtn.addEventListener('click', () => {
