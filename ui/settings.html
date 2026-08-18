@@ -854,34 +854,6 @@
     </div>
   </div>
 
-  <script>
-    function sendIpc(msg) {
-      if (window.ipc && window.ipc.postMessage) {
-        window.ipc.postMessage(JSON.stringify(msg));
-      } else {
-        console.log('IPC Out:', msg);
-      }
-    }
-
-    function switchView(tabName) {
-      const isThemes = tabName === 'themes';
-
-      document.getElementById('tabBtnGeneral').classList.toggle('active', !isThemes);
-      document.getElementById('tabBtnThemes').classList.toggle('active', isThemes);
-
-      document.getElementById('viewGeneral').classList.toggle('active', !isThemes);
-      document.getElementById('viewThemes').classList.toggle('active', isThemes);
-
-      document.getElementById('headerIconGeneral').style.display = isThemes ? 'none' : 'block';
-      document.getElementById('headerIconThemes').style.display = isThemes ? 'block' : 'none';
-
-      if (isThemes) {
-        document.getElementById('headerTitle').innerText = 'Themes & Appearance';
-        document.getElementById('headerSubtitle').innerText = 'Customize browser themes, accent highlights, and web page contrast';
-      } else {
-        document.getElementById('headerTitle').innerText = 'Settings';
-        document.getElementById('headerSubtitle').innerText = 'Manage browser preferences, search, and system settings';
-      }
   <script src="settings.js"></script>
 </body>
 </html>
