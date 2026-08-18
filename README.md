@@ -63,3 +63,19 @@ cargo build --release
 ```powershell
 & "C:\Program Files\WiX Toolset v7.0\bin\wix.exe" build wix\main.wxs -o target\TitanBrowserInstaller.msi
 ```
+
+---
+
+## 📱 Android Version
+
+Titan Browser also includes a native Android client built with **Kotlin** and **Jetpack Compose** in the [`android/`](android/README.md) directory.
+
+### Quick Start for Android:
+1. Open [`android/`](android/) in **Android Studio**.
+2. Run on device or build via Gradle:
+```bash
+cd android
+./gradlew assembleDebug
+```
+See the [Android README](android/README.md) for full architectural and feature details.
+

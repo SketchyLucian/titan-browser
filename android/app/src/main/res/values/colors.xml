@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="titan_background">#0F1015</color>
+    <color name="titan_surface">#181920</color>
+    <color name="titan_surface_variant">#222430</color>
+    <color name="titan_primary">#4E7CF6</color>
+    <color name="titan_on_primary">#FFFFFF</color>
+    <color name="titan_text_primary">#F0F2F5</color>
+    <color name="titan_text_secondary">#8E92A4</color>
+    <color name="titan_border">#2C2D3C</color>
+    <color name="titan_accent_green">#10B981</color>
+</resources>
