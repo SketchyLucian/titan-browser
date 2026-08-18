@@ -1,0 +1,65 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Titan Browser"
+           Manufacturer="Titan Browser Team"
+           Version="0.1.0"
+           UpgradeCode="4F829566-B541-4554-A619-3A000A1838A1"
+           Scope="perMachine">
+    
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Titan Browser is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon" SourceFile="assets\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPNOREPAIR" Value="yes" Secure="yes" />
+
+    <!-- Application Installation Directory in Program Files -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Titan Browser">
+        <Component Id="MainExecutable" Guid="71B8D1C4-0545-422E-8E0E-4E6CA6A76BA2">
+          <File Id="TitanBrowserExe" Source="target\release\titan-browser.exe" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Start Menu Folder & Shortcuts -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Titan Browser">
+        <Component Id="ApplicationShortcut" Guid="85A7E9A1-D4A4-48FE-9502-3D794F04F182">
+          <Shortcut Id="AppStartMenuShortcut"
+                    Name="Titan Browser"
+                    Description="Titan Browser - Fast Web Browser built in Rust"
+                    Target="[#TitanBrowserExe]"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Icon="AppIcon" />
+          <Shortcut Id="UninstallShortcut"
+                    Name="Uninstall Titan Browser"
+                    Description="Uninstalls Titan Browser"
+                    Target="[SystemFolder]msiexec.exe"
+                    Arguments="/x [ProductCode]"
+                    Icon="AppIcon" />
+          <RemoveFolder Id="CleanUpStartMenuFolder" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\TitanBrowser" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Desktop Shortcut -->
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="DesktopShortcutComp" Guid="A3B12345-6789-4ABC-DEF0-1234567890AB">
+        <Shortcut Id="AppDesktopShortcut"
+                  Name="Titan Browser"
+                  Description="Titan Browser - Fast Web Browser built in Rust"
+                  Target="[#TitanBrowserExe]"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="AppIcon" />
+        <RegistryValue Root="HKCU" Key="Software\TitanBrowser" Name="desktop_shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="Titan Browser Application" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="ApplicationShortcut" />
+      <ComponentRef Id="DesktopShortcutComp" />
+    </Feature>
+  </Package>
+</Wix>
