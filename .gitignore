@@ -1,1 +1,12 @@
 /target
+/node_modules
+gen/android/build
+gen/android/.gradle
+gen/android/app/build
+gen/android/buildSrc/build
+gen/android/buildSrc/.gradle
+gen/android/app/src/main/jniLibs
+*.apk
+*.aab
+.DS_Store
+Thumbs.db

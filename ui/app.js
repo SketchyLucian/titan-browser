@@ -45,8 +45,11 @@
 
   // Helper to send IPC messages to Rust
   function sendIpc(message) {
-    if (window.ipc && window.ipc.postMessage) {
-      window.ipc.postMessage(JSON.stringify(message));
+    const raw = typeof message === 'string' ? message : JSON.stringify(message);
+    if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+      window.__TAURI__.core.invoke('handle_ipc', { message: raw }).catch(() => {});
+    } else if (window.ipc && window.ipc.postMessage) {
+      window.ipc.postMessage(raw);
     } else {
       console.log('IPC Out:', message);
     }
@@ -351,6 +354,14 @@
     renderBookmarks();
     updateNav();
   };
+
+  window.updateBrowserState = window.onBrowserState;
+
+  if (window.__TAURI__ && window.__TAURI__.event) {
+    window.__TAURI__.event.listen('browser-state-update', (event) => {
+      window.onBrowserState(event.payload);
+    });
+  }
 
   window.onTabUpdate = function (tabUpdate) {
     const tab = state.tabs.find((t) => t.id === tabUpdate.id);

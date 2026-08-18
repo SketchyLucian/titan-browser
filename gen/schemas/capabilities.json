@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capability for Titan Browser","local":true,"windows":["*"],"webviews":["*"],"permissions":["core:default","core:window:default","core:webview:default","core:event:default","core:app:default"]}}

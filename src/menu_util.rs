@@ -1,5 +1,5 @@
-use tao::platform::windows::WindowExtWindows;
-use tao::window::Window;
+#[cfg(target_os = "windows")]
+use tauri::Window;
 
 #[cfg(target_os = "windows")]
 pub fn show_native_bookmark_context_menu(window: &Window) -> Option<u32> {
@@ -33,7 +33,11 @@ pub fn show_native_bookmark_context_menu(window: &Window) -> Option<u32> {
     const TPM_NONOTIFY: u32 = 0x0080;
     const TPM_RIGHTBUTTON: u32 = 0x0002;
 
-    let hwnd = window.hwnd() as isize;
+    let hwnd = match window.hwnd() {
+        Ok(h) => h.0 as isize,
+        Err(_) => return None,
+    };
+
     let mut pt = POINT { x: 0, y: 0 };
     unsafe {
         GetCursorPos(&mut pt);
@@ -71,41 +75,43 @@ pub fn show_native_bookmark_context_menu(window: &Window) -> Option<u32> {
     }
 }
 
-#[cfg(target_os = "windows")]
-pub fn copy_to_clipboard(text: &str) {
-    #[link(name = "user32")]
-    extern "system" {
-        fn OpenClipboard(hwnd: isize) -> i32;
-        fn CloseClipboard() -> i32;
-        fn EmptyClipboard() -> i32;
-        fn SetClipboardData(format: u32, hmem: isize) -> isize;
-    }
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn GlobalAlloc(flags: u32, bytes: usize) -> isize;
-        fn GlobalLock(hmem: isize) -> *mut u8;
-        fn GlobalUnlock(hmem: isize) -> i32;
-    }
+pub fn copy_to_clipboard(#[allow(unused_variables)] text: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        #[link(name = "user32")]
+        extern "system" {
+            fn OpenClipboard(hwnd: isize) -> i32;
+            fn CloseClipboard() -> i32;
+            fn EmptyClipboard() -> i32;
+            fn SetClipboardData(format: u32, hmem: isize) -> isize;
+        }
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GlobalAlloc(flags: u32, bytes: usize) -> isize;
+            fn GlobalLock(hmem: isize) -> *mut u8;
+            fn GlobalUnlock(hmem: isize) -> i32;
+        }
 
-    const CF_UNICODETEXT: u32 = 13;
-    const GMEM_MOVEABLE: u32 = 0x0002;
+        const CF_UNICODETEXT: u32 = 13;
+        const GMEM_MOVEABLE: u32 = 0x0002;
 
-    let utf16: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    let byte_len = utf16.len() * 2;
+        let utf16: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let byte_len = utf16.len() * 2;
 
-    unsafe {
-        if OpenClipboard(0) != 0 {
-            EmptyClipboard();
-            let hmem = GlobalAlloc(GMEM_MOVEABLE, byte_len);
-            if hmem != 0 {
-                let ptr = GlobalLock(hmem);
-                if !ptr.is_null() {
-                    std::ptr::copy_nonoverlapping(utf16.as_ptr() as *const u8, ptr, byte_len);
-                    GlobalUnlock(hmem);
-                    SetClipboardData(CF_UNICODETEXT, hmem);
+        unsafe {
+            if OpenClipboard(0) != 0 {
+                EmptyClipboard();
+                let hmem = GlobalAlloc(GMEM_MOVEABLE, byte_len);
+                if hmem != 0 {
+                    let ptr = GlobalLock(hmem);
+                    if !ptr.is_null() {
+                        std::ptr::copy_nonoverlapping(utf16.as_ptr() as *const u8, ptr, byte_len);
+                        GlobalUnlock(hmem);
+                        SetClipboardData(CF_UNICODETEXT, hmem);
+                    }
                 }
+                CloseClipboard();
             }
-            CloseClipboard();
         }
     }
 }

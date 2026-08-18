@@ -5,9 +5,12 @@ edition = "2021"
 description = "A modern, high-performance web browser built in Rust with multi-tab support and full YouTube playback."
 authors = ["Titan Browser Team"]
 
+[lib]
+name = "titan_browser_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [dependencies]
-tao = "0.36.0"
-wry = "0.56.1"
+tauri = { version = "2", features = ["unstable"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 url = "2.5"
@@ -20,4 +23,4 @@ panic = "abort"
 strip = true
 
 [build-dependencies]
-winres = "0.1.12"
+tauri-build = { version = "2", features = [] }

@@ -1,0 +1,12 @@
+{
+  "name": "titan-browser",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri",
+    "build": "echo frontend ready"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.4"
+  }
+}

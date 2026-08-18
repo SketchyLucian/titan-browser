@@ -1,23 +1,5 @@
-use tao::platform::windows::WindowExtWindows;
-use tao::window::Window;
-
 #[cfg(target_os = "windows")]
-pub fn drag_window_native(window: &Window) {
-    #[link(name = "user32")]
-    extern "system" {
-        fn ReleaseCapture() -> i32;
-        fn SendMessageW(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> isize;
-    }
-
-    const WM_NCLBUTTONDOWN: u32 = 0x00A1;
-    const HTCAPTION: usize = 2;
-
-    let hwnd = window.hwnd() as isize;
-    unsafe {
-        ReleaseCapture();
-        SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
-    }
-}
+use tauri::Window;
 
 #[cfg(target_os = "windows")]
 pub fn apply_dark_window_attributes(window: &Window, bg_color: (u8, u8, u8)) {
@@ -39,27 +21,27 @@ pub fn apply_dark_window_attributes(window: &Window, bg_color: (u8, u8, u8)) {
         ) -> i32;
     }
 
-    let hwnd = window.hwnd() as isize;
-    // COLORREF is 0x00BBGGRR
-    let colorref = (bg_color.0 as u32) | ((bg_color.1 as u32) << 8) | ((bg_color.2 as u32) << 16);
-    unsafe {
-        let brush = CreateSolidBrush(colorref);
-        const GCLP_HBRBACKGROUND: i32 = -10;
-        SetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND, brush);
+    if let Ok(hwnd_val) = window.hwnd() {
+        let hwnd = hwnd_val.0 as isize;
+        let colorref = (bg_color.0 as u32) | ((bg_color.1 as u32) << 8) | ((bg_color.2 as u32) << 16);
+        unsafe {
+            let brush = CreateSolidBrush(colorref);
+            const GCLP_HBRBACKGROUND: i32 = -10;
+            SetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND, brush);
 
-        let dark_mode: i32 = 1;
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            20,
-            &dark_mode as *const _ as *const _,
-            std::mem::size_of::<i32>() as u32,
-        );
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            19,
-            &dark_mode as *const _ as *const _,
-            std::mem::size_of::<i32>() as u32,
-        );
+            let dark_mode: i32 = 1;
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                20,
+                &dark_mode as *const _ as *const _,
+                std::mem::size_of::<i32>() as u32,
+            );
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                19,
+                &dark_mode as *const _ as *const _,
+                std::mem::size_of::<i32>() as u32,
+            );
+        }
     }
 }
-
