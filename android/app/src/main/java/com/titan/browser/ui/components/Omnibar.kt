@@ -68,15 +68,17 @@ fun Omnibar(
     onReloadOrStop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val displayUrl = if (currentUrl == "titan://newtab" || currentUrl == "about:blank") "" else currentUrl
     var isFocused by remember { mutableStateOf(false) }
-    var textState by remember { mutableStateOf(TextFieldValue(currentUrl)) }
+    var textState by remember { mutableStateOf(TextFieldValue(displayUrl)) }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
 
     // Sync external URL changes when user isn't editing
     LaunchedEffect(currentUrl) {
         if (!isFocused) {
-            textState = TextFieldValue(currentUrl)
+            val syncUrl = if (currentUrl == "titan://newtab" || currentUrl == "about:blank") "" else currentUrl
+            textState = TextFieldValue(syncUrl)
         }
     }
 
@@ -97,13 +99,14 @@ fun Omnibar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Security or Search Icon
-            val isSecure = UrlUtils.isSecure(currentUrl)
+            val isSecure = UrlUtils.isSecure(currentUrl) && currentUrl != "titan://newtab" && currentUrl != "about:blank"
             Icon(
-                imageVector = if (isFocused) Icons.Default.Search else if (isSecure) Icons.Default.Lock else Icons.Default.Search,
+                imageVector = if (isFocused || currentUrl == "titan://newtab" || currentUrl == "about:blank") Icons.Default.Search else if (isSecure) Icons.Default.Lock else Icons.Default.Search,
                 contentDescription = null,
                 tint = if (!isFocused && isSecure) TitanAccentGreen else TitanTextSecondary,
                 modifier = Modifier.size(18.dp)
             )
+
 
             // Address Input Field
             Box(

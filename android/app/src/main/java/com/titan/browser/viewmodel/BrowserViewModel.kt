@@ -61,8 +61,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         loadData()
-        // Open default initial tab (YouTube)
-        openNewTab("https://www.youtube.com")
+        // Open default initial tab (Titan New Tab)
+        openNewTab("titan://newtab")
     }
 
     private fun loadData() {
@@ -77,13 +77,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         return _tabs.value.firstOrNull { it.id == currentId }
     }
 
-    fun openNewTab(url: String = "https://www.youtube.com") {
-        var normalizedUrl = UrlUtils.normalizeOrSearch(
-            url,
-            SearchEngine.fromName(_settings.value.searchEngine)
-        )
-        if (_settings.value.stripTrackingParameters) {
-            normalizedUrl = UrlUtils.stripTrackingParameters(normalizedUrl)
+    fun openNewTab(url: String = "titan://newtab") {
+        var normalizedUrl = if (url == "titan://newtab" || url == "about:blank") {
+            "titan://newtab"
+        } else {
+            val norm = UrlUtils.normalizeOrSearch(
+                url,
+                SearchEngine.fromName(_settings.value.searchEngine)
+            )
+            if (_settings.value.stripTrackingParameters) UrlUtils.stripTrackingParameters(norm) else norm
         }
         val newTab = createTabInstance(normalizedUrl)
 
@@ -95,12 +97,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private fun createTabInstance(initialUrl: String): Tab {
         val context = getApplication<Application>()
         val tabId = java.util.UUID.randomUUID().toString()
+        val isNewTab = initialUrl == "titan://newtab" || initialUrl == "about:blank"
 
         val webView = TitanWebViewFactory.createWebView(context)
         val tab = Tab(
             id = tabId,
             url = initialUrl,
-            title = "Loading...",
+            title = if (isNewTab) "New Tab" else "Loading...",
             webView = webView
         )
 
@@ -144,7 +147,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             }
         )
 
-        webView.loadUrl(initialUrl)
+        if (!isNewTab) {
+            webView.loadUrl(initialUrl)
+        }
         return tab
     }
 
@@ -170,7 +175,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _tabs.value = updatedTabs
 
         if (updatedTabs.isEmpty()) {
-            openNewTab("https://www.youtube.com")
+            openNewTab("titan://newtab")
         } else if (_activeTabId.value == tabId) {
             _activeTabId.value = updatedTabs.last().id
         }
@@ -178,6 +183,17 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun navigate(rawInput: String) {
         val active = getActiveTab() ?: return
+        if (rawInput == "titan://newtab" || rawInput == "about:blank") {
+            updateTab(active.id) {
+                it.copy(
+                    url = "titan://newtab",
+                    title = "New Tab",
+                    isLoading = false,
+                    progress = 0
+                )
+            }
+            return
+        }
         var url = UrlUtils.normalizeOrSearch(
             rawInput,
             SearchEngine.fromName(_settings.value.searchEngine)
@@ -185,8 +201,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         if (_settings.value.stripTrackingParameters) {
             url = UrlUtils.stripTrackingParameters(url)
         }
+        updateTab(active.id) { it.copy(url = url, isLoading = true) }
         active.webView?.loadUrl(url)
     }
+
 
     fun goBack(): Boolean {
         val active = getActiveTab() ?: return false

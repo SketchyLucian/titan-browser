@@ -89,7 +89,7 @@ fun BrowserScreen(
                     .statusBarsPadding()
             ) {
                 Omnibar(
-                    currentUrl = activeTab?.url ?: "https://www.youtube.com",
+                    currentUrl = activeTab?.url ?: "titan://newtab",
                     isLoading = activeTab?.isLoading ?: false,
                     progress = activeTab?.progress ?: 0,
                     onNavigate = { viewModel.navigate(it) },
@@ -116,26 +116,35 @@ fun BrowserScreen(
                 )
             }
 
-            // WebView Web Container
+            // Central Content Container (NewTabScreen or WebView)
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                key(activeTabId) {
-                    activeTab?.webView?.let { webView ->
-                        AndroidView(
-                            factory = {
-                                (webView.parent as? ViewGroup)?.removeView(webView)
-                                webView
-                            },
-                            update = { view ->
-                                if (view != webView) {
+                val isNewTab = activeTab?.url == "titan://newtab" || activeTab?.url == "about:blank"
+                if (isNewTab) {
+                    NewTabScreen(
+                        onNavigate = { viewModel.navigate(it) },
+                        bookmarks = bookmarks,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    key(activeTabId) {
+                        activeTab?.webView?.let { webView ->
+                            AndroidView(
+                                factory = {
                                     (webView.parent as? ViewGroup)?.removeView(webView)
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
+                                    webView
+                                },
+                                update = { view ->
+                                    if (view != webView) {
+                                        (webView.parent as? ViewGroup)?.removeView(webView)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
             }
@@ -148,12 +157,13 @@ fun BrowserScreen(
                 isBookmarked = viewModel.isCurrentPageBookmarked(),
                 onBack = { viewModel.goBack() },
                 onForward = { viewModel.goForward() },
-                onHome = { viewModel.navigate("https://www.youtube.com") },
+                onHome = { viewModel.navigate("titan://newtab") },
                 onToggleBookmark = { viewModel.toggleBookmarkCurrentPage() },
                 onTabsClick = { viewModel.setTabGridVisible(true) },
                 onMenuClick = { viewModel.setMenuVisible(true) }
             )
         }
+
 
         // Tab Grid Switcher Screen
         AnimatedVisibility(
