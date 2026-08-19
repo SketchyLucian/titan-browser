@@ -90,14 +90,16 @@
             titleEl.title = tab.title || tab.url;
             // Close Button
             const closeBtn = document.createElement('button');
-            closeBtn.className = 'tab-close';
+            closeBtn.className = 'tab-close-btn';
             closeBtn.title = 'Close Tab (Ctrl+W)';
-            closeBtn.innerHTML = `<svg viewBox="0 0 12 12" width="9" height="9" stroke="currentColor" stroke-width="1.5"><line x1="1" y1="1" x2="11" y2="11"></line><line x1="11" y1="1" x2="1" y2="11"></line></svg>`;
+            closeBtn.innerHTML = `<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>`;
             closeBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 sendIpc({ type: 'CloseTab', tab_id: tab.id });
             });
             tabEl.addEventListener('click', () => {
+                if (urlInput)
+                    urlInput.blur();
                 sendIpc({ type: 'SwitchTab', tab_id: tab.id });
             });
             tabEl.appendChild(faviconEl);
@@ -194,20 +196,10 @@
         e.stopPropagation();
         sendIpc({ type: 'CloseWindow' });
     });
-    // Window Dragging & Double-Click Maximize
+    // Window Dragging & Double-Click Maximize (strictly on empty titlebar drag region)
     function onDragStart(e) {
-        const target = e.target;
-        if (target.closest('button') ||
-            target.closest('input') ||
-            target.closest('select') ||
-            target.closest('.tab-item') ||
-            target.closest('.bookmark-item') ||
-            target.closest('.brand-logo') ||
-            target.closest('.nav-controls') ||
-            target.closest('.tool-controls') ||
-            target.closest('.window-controls')) {
+        if (e.target !== windowDragRegion)
             return;
-        }
         if (e.detail === 2) {
             sendIpc({ type: 'ToggleMaximizeWindow' });
         }
@@ -215,19 +207,14 @@
             sendIpc({ type: 'DragWindow' });
         }
     }
-    const browserChromeEl = document.getElementById('browserChrome');
-    if (browserChromeEl) {
-        browserChromeEl.addEventListener('mousedown', onDragStart);
-    }
     if (windowDragRegion) {
         windowDragRegion.addEventListener('mousedown', onDragStart);
     }
-    if (tabStrip) {
-        tabStrip.addEventListener('mousedown', onDragStart);
-    }
     // Navigation & Browser Actions
     newTabBtn.addEventListener('click', () => {
-        sendIpc({ type: 'NewTab', url: 'https://www.google.com' });
+        if (urlInput)
+            urlInput.blur();
+        sendIpc({ type: 'NewTab', url: 'titan://newtab' });
     });
     backBtn.addEventListener('click', () => {
         sendIpc({ type: 'GoBack' });
@@ -285,7 +272,7 @@
         if (e.ctrlKey) {
             if (e.key === 't' || e.key === 'T') {
                 e.preventDefault();
-                sendIpc({ type: 'NewTab', url: 'https://www.google.com' });
+                sendIpc({ type: 'NewTab', url: 'titan://newtab' });
             }
             else if (e.key === 'w' || e.key === 'W') {
                 e.preventDefault();

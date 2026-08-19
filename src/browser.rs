@@ -41,6 +41,7 @@ pub struct BrowserManager {
     pub settings: BrowserSettings,
     pub zoom: f64,
     pub window_size: (f64, f64),
+    pub blocked_logs: Vec<crate::ipc::BlockedRequestLog>,
 }
 
 impl BrowserManager {
@@ -64,6 +65,7 @@ impl BrowserManager {
             settings,
             zoom: 1.0,
             window_size: (win_size.width, win_size.height),
+            blocked_logs: Vec::new(),
         }
     }
 
@@ -103,8 +105,8 @@ impl BrowserManager {
 
         self.header_webview = Some(header);
 
-        // Open default initial tab (YouTube)
-        self.create_tab("https://www.youtube.com");
+        // Open default initial tab (Titan New Tab)
+        self.create_tab("titan://newtab");
     }
 
     pub fn get_chrome_html() -> String {
@@ -128,27 +130,57 @@ impl BrowserManager {
         let state_json = serde_json::to_string(&serde_json::json!({
             "settings": self.settings,
             "modules": self.modules,
+            "blocked_logs": self.blocked_logs,
             "active_section": active_section,
         }))
         .unwrap_or_else(|_| "{}".into());
 
         html.replace(
             "<script src=\"settings.js\"></script>",
-            &format!("<script>{}</script><script>window.addEventListener('DOMContentLoaded', () => {{ window.initSettings && window.initSettings({}); }});</script>", js, state_json)
+            &format!("<script>{}</script><script>(function(){{ function run(){{ window.initSettings && window.initSettings({}); }} if (document.readyState === 'loading') {{ window.addEventListener('DOMContentLoaded', run); }} else {{ run(); }} }})();</script>", js, state_json)
         )
+    }
+
+    pub fn get_newtab_html(&self) -> String {
+        let html = include_str!("../ui/newtab.html");
+        let js = include_str!("../ui/dist/newtab.js");
+        let state_json = serde_json::to_string(&serde_json::json!({
+            "theme": self.settings.theme,
+            "accent_color": self.settings.accent_color,
+            "search_engine": self.settings.search_engine,
+        }))
+        .unwrap_or_else(|_| "{}".into());
+
+        html.replace(
+            "<script src=\"newtab.js\"></script>",
+            &format!("<script>{}</script><script>(function(){{ function run(){{ window.initNewTab && window.initNewTab({}); }} if (document.readyState === 'loading') {{ window.addEventListener('DOMContentLoaded', run); }} else {{ run(); }} }})();</script>", js, state_json)
+        )
+    }
+
+    pub fn is_newtab_url(url: &str) -> bool {
+        url == "titan://newtab"
+            || url == "about:newtab"
+            || url == "titan://home"
+            || url == "about:home"
+            || url == "about:blank"
     }
 
     pub fn is_settings_url(url: &str) -> bool {
         url == "titan://settings"
             || url == "titan://themes"
+            || url == "titan://privacy"
             || url == "titan://modules"
             || url == "titan://darkmode"
             || url == "about:settings"
             || url == "about:themes"
+            || url == "about:privacy"
     }
 
     pub fn is_internal_url(url: &str) -> bool {
-        Self::is_settings_url(url) || url.starts_with("titan://") || url.starts_with("about:")
+        Self::is_settings_url(url)
+            || Self::is_newtab_url(url)
+            || url.starts_with("titan://")
+            || url.starts_with("about:")
     }
 
     pub fn get_current_window_size(&self) -> (f64, f64) {
@@ -420,6 +452,206 @@ impl BrowserManager {
         )
     }
 
+    pub fn get_privacy_injection_script(&self) -> String {
+        let dnt = self.settings.do_not_track;
+        let gpc = self.settings.global_privacy_control;
+        let block_webrtc = self.settings.block_webrtc_leak;
+        let block_fingerprint = self.settings.block_fingerprinting;
+        let block_auditing = self.settings.block_hyperlink_auditing;
+        let blocked_domains_json = serde_json::to_string(&self.settings.blocked_domains)
+            .unwrap_or_else(|_| "[]".into());
+        let whitelisted_domains_json = serde_json::to_string(&self.settings.whitelisted_domains)
+            .unwrap_or_else(|_| "[]".into());
+
+        format!(
+            r#"
+            (function() {{
+                try {{
+                    const dnt = {dnt};
+                    const gpc = {gpc};
+                    const blockWebrtc = {block_webrtc};
+                    const blockFingerprint = {block_fingerprint};
+                    const blockAuditing = {block_auditing};
+                    const BLOCKLIST = {blocked_domains_json};
+                    const WHITELIST = {whitelisted_domains_json};
+
+                    if (dnt) {{
+                        try {{
+                            Object.defineProperty(navigator, 'doNotTrack', {{ get: () => '1', configurable: true }});
+                            Object.defineProperty(window, 'doNotTrack', {{ get: () => '1', configurable: true }});
+                        }} catch(e) {{}}
+                    }}
+
+                    if (gpc) {{
+                        try {{
+                            Object.defineProperty(navigator, 'globalPrivacyControl', {{ get: () => true, configurable: true }});
+                        }} catch(e) {{}}
+                    }}
+
+                    if (blockWebrtc) {{
+                        try {{
+                            if (window.RTCPeerConnection) {{
+                                const origSetLocalDesc = window.RTCPeerConnection.prototype.setLocalDescription;
+                                if (origSetLocalDesc) {{
+                                    window.RTCPeerConnection.prototype.setLocalDescription = function(desc) {{
+                                        if (desc && desc.sdp) {{
+                                            desc.sdp = desc.sdp.replace(/a=candidate:.+typ host .+\r\n/g, '');
+                                        }}
+                                        return origSetLocalDesc.call(this, desc);
+                                    }};
+                                }}
+                            }}
+                        }} catch(e) {{}}
+                    }}
+
+                    if (blockFingerprint) {{
+                        try {{
+                            const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+                            HTMLCanvasElement.prototype.toDataURL = function(type, ...args) {{
+                                try {{
+                                    const ctx = this.getContext('2d');
+                                    if (ctx) {{
+                                        const imgData = ctx.getImageData(0, 0, Math.min(this.width, 16), Math.min(this.height, 16));
+                                        for (let i = 0; i < imgData.data.length; i += 4) {{
+                                            imgData.data[i] = (imgData.data[i] ^ 1);
+                                        }}
+                                        ctx.putImageData(imgData, 0, 0);
+                                    }}
+                                }} catch(e) {{}}
+                                return origToDataURL.apply(this, [type, ...args]);
+                            }};
+
+                            if (window.AudioBuffer && window.AudioBuffer.prototype.getChannelData) {{
+                                const origGetChannelData = window.AudioBuffer.prototype.getChannelData;
+                                window.AudioBuffer.prototype.getChannelData = function(channel) {{
+                                    const data = origGetChannelData.apply(this, [channel]);
+                                    for (let i = 0; i < Math.min(data.length, 100); i += 10) {{
+                                        data[i] += 0.00000001;
+                                    }}
+                                    return data;
+                                }};
+                            }}
+
+                            if (navigator.getBattery) {{
+                                navigator.getBattery = () => Promise.resolve({{
+                                    charging: true,
+                                    chargingTime: 0,
+                                    dischargingTime: Infinity,
+                                    level: 1.0,
+                                    addEventListener: () => {{}},
+                                    removeEventListener: () => {{}}
+                                }});
+                            }}
+
+                            if (navigator.connection) {{
+                                try {{
+                                    Object.defineProperty(navigator, 'connection', {{
+                                        get: () => ({{ effectiveType: '4g', rtt: 50, downlink: 10, saveData: false }}),
+                                        configurable: true
+                                    }});
+                                }} catch(e) {{}}
+                            }}
+                        }} catch(e) {{}}
+                    }}
+
+                    if (blockAuditing) {{
+                        try {{
+                            const isBlockedUrl = function(u, reqType) {{
+                                if (!u) return false;
+                                const str = String(u).toLowerCase();
+                                if (WHITELIST.some(d => str.includes(d.toLowerCase()))) return false;
+                                const match = BLOCKLIST.find(d => str.includes(d.toLowerCase()));
+                                if (match) {{
+                                    try {{
+                                        window.ipc.postMessage(JSON.stringify({{
+                                            type: 'ReportBlockedRequest',
+                                            domain: match,
+                                            url: str.substring(0, 120),
+                                            req_type: reqType || 'interceptor'
+                                        }}));
+                                    }} catch(e) {{}}
+                                    return true;
+                                }}
+                                return false;
+                            }};
+
+                            // 1. Intercept window.fetch
+                            if (window.fetch) {{
+                                const origFetch = window.fetch.bind(window);
+                                window.fetch = function(input, init) {{
+                                    const urlStr = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+                                    if (isBlockedUrl(urlStr, 'fetch')) {{
+                                        return Promise.resolve(new Response('', {{ status: 204, statusText: 'No Content (Blocked by Titan)' }}));
+                                    }}
+                                    return origFetch(input, init);
+                                }};
+                            }}
+
+                            // 2. Intercept XMLHttpRequest
+                            if (window.XMLHttpRequest) {{
+                                const origOpen = XMLHttpRequest.prototype.open;
+                                const origSend = XMLHttpRequest.prototype.send;
+                                XMLHttpRequest.prototype.open = function(method, url, ...rest) {{
+                                    this._titanBlocked = isBlockedUrl(url, 'xhr');
+                                    if (this._titanBlocked) {{
+                                        return origOpen.apply(this, [method, 'about:blank', ...rest]);
+                                    }}
+                                    return origOpen.apply(this, [method, url, ...rest]);
+                                }};
+                                XMLHttpRequest.prototype.send = function(...args) {{
+                                    if (this._titanBlocked) {{
+                                        try {{
+                                            Object.defineProperty(this, 'status', {{ get: () => 204 }});
+                                            Object.defineProperty(this, 'readyState', {{ get: () => 4 }});
+                                            Object.defineProperty(this, 'responseText', {{ get: () => '' }});
+                                            if (this.onreadystatechange) this.onreadystatechange(new Event('readystatechange'));
+                                            if (this.onload) this.onload(new ProgressEvent('load'));
+                                        }} catch(e) {{}}
+                                        return;
+                                    }}
+                                    return origSend.apply(this, args);
+                                }};
+                            }}
+
+                            // 3. Intercept navigator.sendBeacon
+                            if (navigator.sendBeacon) {{
+                                const origBeacon = navigator.sendBeacon.bind(navigator);
+                                navigator.sendBeacon = function(url, data) {{
+                                    if (isBlockedUrl(url, 'beacon')) {{
+                                        return true; // Pretend success, drop telemetry payload
+                                    }}
+                                    return origBeacon(url, data);
+                                }};
+                            }}
+
+                            // 4. Strip <a ping> attributes
+                            const stripPing = () => {{
+                                document.querySelectorAll('a[ping]').forEach(a => a.removeAttribute('ping'));
+                            }};
+                            if (document.readyState === 'loading') {{
+                                document.addEventListener('DOMContentLoaded', stripPing, {{ once: true }});
+                            }} else {{
+                                stripPing();
+                            }}
+                            document.addEventListener('click', (e) => {{
+                                const a = e.target && e.target.closest ? e.target.closest('a') : null;
+                                if (a && a.hasAttribute('ping')) a.removeAttribute('ping');
+                            }}, true);
+                        }} catch(e) {{}}
+                    }}
+                }} catch(e) {{}}
+            }})();
+            "#,
+            dnt = dnt,
+            gpc = gpc,
+            block_webrtc = block_webrtc,
+            block_fingerprint = block_fingerprint,
+            block_auditing = block_auditing,
+            blocked_domains_json = blocked_domains_json,
+            whitelisted_domains_json = whitelisted_domains_json,
+        )
+    }
+
     pub fn update_all_tabs_theme(&self) {
         let script = self.get_theme_injection_script();
         for tab in &self.tabs {
@@ -433,22 +665,37 @@ impl BrowserManager {
         let tab_id = self.next_tab_id;
         self.next_tab_id += 1;
 
+        let is_newtab = Self::is_newtab_url(target_url);
         let is_settings = Self::is_settings_url(target_url);
         let is_themes = target_url == "titan://themes" || target_url == "about:themes";
+        let is_privacy = target_url == "titan://privacy" || target_url == "about:privacy";
 
-        let normalized_url = if is_settings {
+        let normalized_url = if is_newtab {
+            "titan://newtab".to_string()
+        } else if is_settings {
             "titan://settings".to_string()
         } else {
-            normalize_or_search_url_with_engine(target_url, &self.settings.search_engine)
+            let clean_url = if self.settings.strip_tracking_parameters {
+                crate::url_utils::strip_tracking_parameters(target_url)
+            } else {
+                target_url.to_string()
+            };
+            normalize_or_search_url_with_engine(&clean_url, &self.settings.search_engine)
         };
 
         let proxy_ipc = self.proxy.clone();
         let proxy_load = self.proxy.clone();
         let tab_id_copy = tab_id;
-        let theme_script = if is_settings {
+        let is_internal = is_newtab || is_settings;
+        let theme_script = if is_internal {
             "".to_string()
         } else {
             self.get_theme_injection_script()
+        };
+        let privacy_script = if is_internal {
+            "".to_string()
+        } else {
+            self.get_privacy_injection_script()
         };
 
         let init_script = format!(
@@ -487,10 +734,12 @@ impl BrowserManager {
                 setTimeout(notify, 500);
 
                 {theme_script}
+                {privacy_script}
             }})();
             "#,
             tab_id = tab_id,
-            theme_script = theme_script
+            theme_script = theme_script,
+            privacy_script = privacy_script,
         );
 
         let content_bounds = self.get_content_bounds();
@@ -524,8 +773,16 @@ impl BrowserManager {
                 }
             });
 
-        let internal_html = if is_settings {
-            let section = if is_themes { "themes" } else { "general" };
+        let internal_html = if is_newtab {
+            Some(self.get_newtab_html())
+        } else if is_settings {
+            let section = if is_themes {
+                "themes"
+            } else if is_privacy {
+                "privacy"
+            } else {
+                "general"
+            };
             Some(self.get_settings_html(section))
         } else {
             None
@@ -539,8 +796,12 @@ impl BrowserManager {
         .build(&*self.window)
         .expect("Failed to create content webview for tab");
 
-        let default_title = if is_themes {
+        let default_title = if is_newtab {
+            "New Tab".to_string()
+        } else if is_themes {
             "Themes".to_string()
+        } else if is_privacy {
+            "Privacy & Security".to_string()
         } else if is_settings {
             "Settings".to_string()
         } else if normalized_url.contains("youtube.com") {
@@ -553,7 +814,7 @@ impl BrowserManager {
             id: tab_id,
             url: normalized_url,
             title: default_title,
-            is_loading: !is_settings,
+            is_loading: !is_internal,
             can_go_back: false,
             can_go_forward: false,
             webview,
@@ -567,7 +828,14 @@ impl BrowserManager {
     pub fn switch_tab(&mut self, target_id: u32) {
         let content_bounds = self.get_content_bounds();
 
-        // 1. Show, reposition and focus the target active tab FIRST
+        // 1. Hide all other tabs FIRST so they don't block hit testing or steal focus
+        for tab in &mut self.tabs {
+            if tab.id != target_id {
+                let _ = tab.webview.set_visible(false);
+            }
+        }
+
+        // 2. Show, reposition and focus the target active tab
         if let Some(active_tab) = self.tabs.iter_mut().find(|t| t.id == target_id) {
             let _ = active_tab.webview.set_bounds(content_bounds);
             let _ = active_tab.webview.set_visible(true);
@@ -576,13 +844,6 @@ impl BrowserManager {
                 if !current_url.is_empty() && current_url != "about:blank" {
                     active_tab.url = current_url;
                 }
-            }
-        }
-
-        // 2. Hide all other tabs (without collapsing their bounds)
-        for tab in &mut self.tabs {
-            if tab.id != target_id {
-                let _ = tab.webview.set_visible(false);
             }
         }
 
@@ -597,7 +858,7 @@ impl BrowserManager {
 
             if self.tabs.is_empty() {
                 // If all tabs closed, create a fresh New Tab
-                self.create_tab("https://www.google.com");
+                self.create_tab("titan://newtab");
             } else if was_active {
                 let new_idx = if pos >= self.tabs.len() {
                     self.tabs.len() - 1
@@ -613,14 +874,12 @@ impl BrowserManager {
     }
 
     pub fn navigate_active_tab(&mut self, input: &str) {
-        if Self::is_settings_url(input) {
-            let is_themes = input == "titan://themes" || input == "about:themes";
-            let section = if is_themes { "themes" } else { "general" };
-            let html = self.get_settings_html(section);
+        if Self::is_newtab_url(input) {
+            let html = self.get_newtab_html();
             if let Some(active_id) = self.active_tab_id {
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
-                    tab.url = "titan://settings".into();
-                    tab.title = if is_themes { "Themes".into() } else { "Settings".into() };
+                    tab.url = "titan://newtab".into();
+                    tab.title = "New Tab".into();
                     tab.is_loading = false;
                     let _ = tab.webview.load_html(&html);
                     let _ = tab.webview.focus();
@@ -630,7 +889,43 @@ impl BrowserManager {
             return;
         }
 
-        let normalized = normalize_or_search_url_with_engine(input, &self.settings.search_engine);
+        if Self::is_settings_url(input) {
+            let is_themes = input == "titan://themes" || input == "about:themes";
+            let is_privacy = input == "titan://privacy" || input == "about:privacy";
+            let section = if is_themes {
+                "themes"
+            } else if is_privacy {
+                "privacy"
+            } else {
+                "general"
+            };
+            let html = self.get_settings_html(section);
+            if let Some(active_id) = self.active_tab_id {
+                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
+                    tab.url = "titan://settings".into();
+                    tab.title = if is_themes {
+                        "Themes".into()
+                    } else if is_privacy {
+                        "Privacy & Security".into()
+                    } else {
+                        "Settings".into()
+                    };
+                    tab.is_loading = false;
+                    let _ = tab.webview.load_html(&html);
+                    let _ = tab.webview.focus();
+                }
+                self.sync_tab_update(active_id);
+            }
+            return;
+        }
+
+        let clean_input = if self.settings.strip_tracking_parameters {
+            crate::url_utils::strip_tracking_parameters(input)
+        } else {
+            input.to_string()
+        };
+
+        let normalized = normalize_or_search_url_with_engine(&clean_input, &self.settings.search_engine);
         if let Some(active_id) = self.active_tab_id {
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                 tab.url = normalized.clone();
@@ -669,7 +964,13 @@ impl BrowserManager {
                 .map(|t| t.url.clone())
                 .unwrap_or_default();
 
-            if Self::is_settings_url(&tab_url) {
+            if Self::is_newtab_url(&tab_url) {
+                let html = self.get_newtab_html();
+                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
+                    let _ = tab.webview.load_html(&html);
+                    let _ = tab.webview.focus();
+                }
+            } else if Self::is_settings_url(&tab_url) {
                 let html = self.get_settings_html("general");
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                     let _ = tab.webview.load_html(&html);
@@ -685,7 +986,7 @@ impl BrowserManager {
     }
 
     pub fn go_home(&mut self) {
-        self.navigate_active_tab("https://www.youtube.com");
+        self.navigate_active_tab("titan://newtab");
     }
 
     pub fn set_zoom(&mut self, zoom: f64) {
@@ -721,6 +1022,7 @@ impl BrowserManager {
         let state_json = serde_json::to_string(&serde_json::json!({
             "settings": self.settings,
             "modules": self.modules,
+            "blocked_logs": self.blocked_logs,
         }))
         .unwrap_or_else(|_| "{}".into());
 
@@ -823,9 +1125,12 @@ impl BrowserManager {
         let content_bounds = self.get_content_bounds();
         let active_id = self.active_tab_id;
         for tab in &mut self.tabs {
-            let is_active = Some(tab.id) == active_id;
-            let _ = tab.webview.set_bounds(content_bounds);
-            let _ = tab.webview.set_visible(is_active);
+            if Some(tab.id) == active_id {
+                let _ = tab.webview.set_bounds(content_bounds);
+                let _ = tab.webview.set_visible(true);
+            } else {
+                let _ = tab.webview.set_visible(false);
+            }
         }
     }
 
@@ -836,7 +1141,7 @@ impl BrowserManager {
                     self.sync_full_state();
                 }
                 IpcIncoming::NewTab { url } => {
-                    let default_url = url.unwrap_or_else(|| "https://www.google.com".into());
+                    let default_url = url.unwrap_or_else(|| "titan://newtab".into());
                     self.create_tab(&default_url);
                 }
                 IpcIncoming::CloseTab { tab_id } => {
@@ -902,6 +1207,95 @@ impl BrowserManager {
                     self.resize(w, h);
                     self.sync_full_state();
                 }
+                IpcIncoming::SetPrivacySetting { key, enabled } => {
+                    match key.as_str() {
+                        "do_not_track" => self.settings.do_not_track = enabled,
+                        "global_privacy_control" => self.settings.global_privacy_control = enabled,
+                        "strip_tracking_parameters" => self.settings.strip_tracking_parameters = enabled,
+                        "block_webrtc_leak" => self.settings.block_webrtc_leak = enabled,
+                        "block_fingerprinting" => self.settings.block_fingerprinting = enabled,
+                        "block_hyperlink_auditing" => self.settings.block_hyperlink_auditing = enabled,
+                        "telemetry_disabled" => self.settings.telemetry_disabled = enabled,
+                        _ => {}
+                    }
+                    self.storage.save_settings(&self.settings);
+                    self.sync_settings_tabs();
+                    self.sync_full_state();
+                }
+                IpcIncoming::AddBlockedDomain { domain } => {
+                    let d = domain.trim().to_lowercase();
+                    if !d.is_empty() && !self.settings.blocked_domains.contains(&d) {
+                        self.settings.blocked_domains.push(d);
+                        self.storage.save_settings(&self.settings);
+                        self.sync_settings_tabs();
+                    }
+                }
+                IpcIncoming::RemoveBlockedDomain { domain } => {
+                    let d = domain.trim().to_lowercase();
+                    self.settings.blocked_domains.retain(|item| item != &d);
+                    self.storage.save_settings(&self.settings);
+                    self.sync_settings_tabs();
+                }
+                IpcIncoming::AddWhitelistedDomain { domain } => {
+                    let d = domain.trim().to_lowercase();
+                    if !d.is_empty() && !self.settings.whitelisted_domains.contains(&d) {
+                        self.settings.whitelisted_domains.push(d);
+                        self.storage.save_settings(&self.settings);
+                        self.sync_settings_tabs();
+                    }
+                }
+                IpcIncoming::RemoveWhitelistedDomain { domain } => {
+                    let d = domain.trim().to_lowercase();
+                    self.settings.whitelisted_domains.retain(|item| item != &d);
+                    self.storage.save_settings(&self.settings);
+                    self.sync_settings_tabs();
+                }
+                IpcIncoming::ResetPrivacyRules => {
+                    self.settings.blocked_domains = crate::ipc::default_blocked_domains();
+                    self.settings.whitelisted_domains.clear();
+                    self.storage.save_settings(&self.settings);
+                    self.sync_settings_tabs();
+                }
+                IpcIncoming::ReportBlockedRequest { domain, url, req_type } => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| {
+                            let secs = d.as_secs();
+                            let h = (secs / 3600 % 24) as u32;
+                            let m = (secs / 60 % 60) as u32;
+                            let s = (secs % 60) as u32;
+                            format!("{:02}:{:02}:{:02}", h, m, s)
+                        })
+                        .unwrap_or_else(|_| "Just now".into());
+
+                    self.blocked_logs.insert(0, crate::ipc::BlockedRequestLog {
+                        domain,
+                        url,
+                        req_type,
+                        timestamp: now,
+                    });
+                    if self.blocked_logs.len() > 50 {
+                        self.blocked_logs.truncate(50);
+                    }
+                    self.sync_settings_tabs();
+                }
+                IpcIncoming::ClearBrowsingData { cookies, cache, local_storage } => {
+                    let mut script = String::new();
+                    if local_storage {
+                        script.push_str("try { localStorage.clear(); sessionStorage.clear(); } catch(e){}");
+                    }
+                    if cookies {
+                        script.push_str("try { document.cookie.split(';').forEach(c => { document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/'); }); } catch(e){}");
+                    }
+                    if cache {
+                        script.push_str("try { if (window.caches) { caches.keys().then(keys => keys.forEach(k => caches.delete(k))); } } catch(e){}");
+                    }
+                    for tab in &self.tabs {
+                        if !Self::is_internal_url(&tab.url) {
+                            let _ = tab.webview.evaluate_script(&script);
+                        }
+                    }
+                }
                 IpcIncoming::OpenThemes => {
                     if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url)) {
                         let tab_id = self.tabs[pos].id;
@@ -909,6 +1303,15 @@ impl BrowserManager {
                         let _ = self.tabs[pos].webview.evaluate_script("window.switchView && window.switchView('themes');");
                     } else {
                         self.create_tab("titan://themes");
+                    }
+                }
+                IpcIncoming::OpenPrivacy => {
+                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url)) {
+                        let tab_id = self.tabs[pos].id;
+                        self.switch_tab(tab_id);
+                        let _ = self.tabs[pos].webview.evaluate_script("window.switchView && window.switchView('privacy');");
+                    } else {
+                        self.create_tab("titan://privacy");
                     }
                 }
                 IpcIncoming::OpenSettings => {
@@ -991,6 +1394,7 @@ impl BrowserManager {
                 zoom: self.zoom,
                 search_engine: self.settings.search_engine.clone(),
                 is_maximized: self.window.is_maximized(),
+                blocked_logs: self.blocked_logs.clone(),
             };
 
             if let Ok(json) = serde_json::to_string(&state) {

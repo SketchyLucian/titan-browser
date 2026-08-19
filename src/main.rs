@@ -22,9 +22,28 @@ fn main() {
     let webview_data_dir = get_app_data_dir().join("webview_profile");
     let _ = std::fs::create_dir_all(&webview_data_dir);
     std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_data_dir);
+
+    // Hardened Chromium & WebView2 anti-telemetry and privacy flags:
+    // Disables background networking, metrics uploads, crash reporting, domain reliability pings, tracking,
+    // and maps known telemetry/diagnostic hostnames to 0.0.0.0 at the socket resolver layer.
+    let privacy_browser_args = [
+        "--disable-features=CalculateNativeWinOcclusion,Translate,OptimizationHints,MediaRouter,InterestFeedContentSuggestions",
+        "--disable-background-networking",
+        "--disable-domain-reliability",
+        "--disable-component-update",
+        "--disable-sync",
+        "--disable-breakpad",
+        "--no-report-upload",
+        "--metrics-recording-only",
+        "--disable-client-side-phishing-detection",
+        "--disable-default-apps",
+        "--no-pings",
+        "--host-resolver-rules=\"MAP *.pipe.aria.microsoft.com 0.0.0.0, MAP *.events.data.microsoft.com 0.0.0.0, MAP telemetry.microsoft.com 0.0.0.0, MAP *.telemetry.microsoft.com 0.0.0.0, MAP watson.telemetry.microsoft.com 0.0.0.0, MAP mobile.pipe.aria.microsoft.com 0.0.0.0, MAP *.google-analytics.com 0.0.0.0, MAP *.googletagmanager.com 0.0.0.0, MAP stats.g.doubleclick.net 0.0.0.0, MAP *.sentry.io 0.0.0.0, MAP *.clarity.ms 0.0.0.0, MAP *.segment.io 0.0.0.0, MAP *.mixpanel.com 0.0.0.0\"",
+    ].join(" ");
+
     std::env::set_var(
         "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-        "--disable-features=CalculateNativeWinOcclusion",
+        &privacy_browser_args,
     );
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();

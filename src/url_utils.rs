@@ -96,6 +96,45 @@ fn is_likely_domain_or_ip(text: &str) -> bool {
     false
 }
 
+pub fn strip_tracking_parameters(raw_url: &str) -> String {
+    if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
+        return raw_url.to_string();
+    }
+
+    if let Ok(mut parsed) = url::Url::parse(raw_url) {
+        if parsed.query().is_none() {
+            return raw_url.to_string();
+        }
+
+        let tracking_keys = [
+            "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
+            "utm_source_platform", "utm_creative_format", "utm_marketing_tactic",
+            "fbclid", "gclid", "gclsrc", "dclid", "msclkid", "mc_eid", "igshid",
+            "yclid", "_hsenc", "_hsmi", "wbraid", "gbraid", "twclid", "ref_src", "ref_url"
+        ];
+
+        let filtered_pairs: Vec<(String, String)> = parsed
+            .query_pairs()
+            .filter(|(k, _)| !tracking_keys.contains(&k.to_lowercase().as_str()))
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+
+        if filtered_pairs.is_empty() {
+            parsed.set_query(None);
+        } else {
+            let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+            for (k, v) in filtered_pairs {
+                serializer.append_pair(&k, &v);
+            }
+            parsed.set_query(Some(&serializer.finish()));
+        }
+
+        parsed.to_string()
+    } else {
+        raw_url.to_string()
+    }
+}
+
 fn urlencoding(input: &str) -> String {
     let mut encoded = String::new();
     for byte in input.bytes() {
@@ -145,6 +184,22 @@ mod tests {
         assert_eq!(
             normalize_or_search_url("@yt lofi chill"),
             "https://www.youtube.com/results?search_query=lofi+chill"
+        );
+    }
+
+    #[test]
+    fn test_strip_tracking_parameters() {
+        assert_eq!(
+            strip_tracking_parameters("https://example.com/article?utm_source=twitter&utm_medium=social&page=2"),
+            "https://example.com/article?page=2"
+        );
+        assert_eq!(
+            strip_tracking_parameters("https://example.com/item?fbclid=IwAR123456"),
+            "https://example.com/item"
+        );
+        assert_eq!(
+            strip_tracking_parameters("https://example.com/?gclid=abc&q=rust"),
+            "https://example.com/?q=rust"
         );
     }
 }
