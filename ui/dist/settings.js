@@ -316,11 +316,6 @@
     let currentWhitelistedDomains = [];
     let currentBlockedLogs = [];
     let currentRuleFilter = '';
-    // AdBlock Domain Rules, Whitelist & Logs
-    let currentAdblockDomains = [];
-    let currentAdblockWhitelistedDomains = [];
-    let currentAdblockLogs = [];
-    let currentAdblockRuleFilter = '';
     function cleanDomainInput(val) {
         return val
             .trim()
@@ -451,35 +446,101 @@
         })
             .join('');
     }
-    // AdBlock Domain Rules & Whitelist Renderers
-    function renderAdblockDomainsList() {
-        const listEl = document.getElementById('adblockDomainsList');
-        const countBadge = document.getElementById('adblockRulesCount');
+    // AdBlock Engine Lists, Custom Rules, Stats, Whitelist & Logs
+    let currentFilterLists = [];
+    let currentCustomRules = [];
+    let currentAdblockStats = null;
+    let currentAdblockWhitelistedDomains = [];
+    let currentAdblockLogs = [];
+    function formatBytes(bytes) {
+        if (!bytes || bytes === 0)
+            return '0 KB';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+    function renderAdblockStats() {
+        const statAds = document.getElementById('statAdsBlocked');
+        const statBw = document.getElementById('statBandwidthSaved');
+        const statCosm = document.getElementById('statCosmeticHidden');
+        const statRules = document.getElementById('statTotalRules');
+        const totalBlocked = currentAdblockStats ? currentAdblockStats.blocked_requests_count : currentAdblockLogs.length;
+        const bwSaved = currentAdblockStats && currentAdblockStats.estimated_bandwidth_saved_bytes > 0
+            ? currentAdblockStats.estimated_bandwidth_saved_bytes
+            : currentAdblockLogs.length * 45 * 1024;
+        const cosmeticCount = currentAdblockStats ? currentAdblockStats.cosmetic_elements_hidden_count : 0;
+        const totalRulesCount = currentAdblockStats && currentAdblockStats.total_rules > 0
+            ? currentAdblockStats.total_rules
+            : currentFilterLists.reduce((acc, l) => acc + (l.enabled ? l.count : 0), 0);
+        if (statAds)
+            statAds.textContent = totalBlocked.toLocaleString();
+        if (statBw)
+            statBw.textContent = formatBytes(bwSaved);
+        if (statCosm)
+            statCosm.textContent = cosmeticCount.toLocaleString();
+        if (statRules)
+            statRules.textContent = totalRulesCount > 0 ? totalRulesCount.toLocaleString() : '120,000+';
+    }
+    function renderFilterLists() {
+        const container = document.getElementById('filterListsContainer');
+        if (!container)
+            return;
+        if (currentFilterLists.length === 0) {
+            container.innerHTML = `<div class="rules-empty-state">Loading filter subscriptions...</div>`;
+            return;
+        }
+        container.innerHTML = currentFilterLists
+            .map((list) => {
+            return `
+          <div class="filter-list-item">
+            <div class="filter-list-info">
+              <div class="filter-list-name-row">
+                <span class="filter-list-name">${list.name}</span>
+                <span class="filter-list-count">${list.count.toLocaleString()} rules</span>
+              </div>
+              <div class="filter-list-desc">${list.description}</div>
+            </div>
+            <label class="switch" style="flex-shrink: 0;">
+              <input type="checkbox" ${list.enabled ? 'checked' : ''} onchange="toggleFilterList('${list.id}', this.checked)" />
+              <span class="slider"></span>
+            </label>
+          </div>
+        `;
+        })
+            .join('');
+    }
+    function renderCustomRules() {
+        const listEl = document.getElementById('customRulesList');
+        const countBadge = document.getElementById('customRulesCount');
         if (!listEl)
             return;
-        const filtered = currentAdblockDomains.filter((d) => d.toLowerCase().includes(currentAdblockRuleFilter.toLowerCase()));
         if (countBadge) {
-            countBadge.textContent = `${currentAdblockDomains.length} rules active`;
+            countBadge.textContent = `${currentCustomRules.length} custom rules`;
         }
-        if (filtered.length === 0) {
+        if (currentCustomRules.length === 0) {
             listEl.innerHTML = `
         <div class="rules-empty-state">
-          ${currentAdblockRuleFilter ? 'No matching ad rules found.' : 'No ad domains configured.'}
+          No custom rules added yet. Enter standard Adblock Plus or uBlock Origin filter rules above.
         </div>
       `;
             return;
         }
-        listEl.innerHTML = filtered
-            .map((domain) => {
+        listEl.innerHTML = currentCustomRules
+            .map((rule) => {
+            const isCosmetic = rule.includes('##') || rule.includes('#@#') || rule.includes('#?#');
+            const badgeLabel = isCosmetic ? 'Cosmetic CSS' : 'Network Rule';
+            const badgeColor = isCosmetic ? '#f59e0b' : '#3b82f6';
+            const safeRule = encodeURIComponent(rule);
             return `
           <div class="rule-item">
             <div class="rule-item-left">
-              <span class="rule-cat-badge" style="background: rgba(78, 124, 246, 0.18); color: #60a5fa; border: 1px solid rgba(78, 124, 246, 0.35);">
-                Ad Server
+              <span class="rule-cat-badge" style="background: ${badgeColor}22; color: ${badgeColor}; border: 1px solid ${badgeColor}44;">
+                ${badgeLabel}
               </span>
-              <span class="rule-domain-text">${domain}</span>
+              <span class="rule-domain-text" title="${rule}">${rule}</span>
             </div>
-            <button class="rule-delete-btn" onclick="removeAdblockDomain('${domain}')" title="Remove rule">
+            <button class="rule-delete-btn" onclick="removeCustomRule('${safeRule}')" title="Remove rule">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -530,14 +591,10 @@
     function renderAdblockActivityLogs() {
         const logListEl = document.getElementById('adblockActivityLogList');
         const countBadge = document.getElementById('adblockActivityCountBadge');
-        const heroBadge = document.getElementById('adblockTotalBlockedBadge');
         if (!logListEl)
             return;
         if (countBadge) {
             countBadge.textContent = `${currentAdblockLogs.length} ads blocked`;
-        }
-        if (heroBadge) {
-            heroBadge.textContent = `${currentAdblockLogs.length} Ads Stopped`;
         }
         if (currentAdblockLogs.length === 0) {
             logListEl.innerHTML = `
@@ -548,7 +605,7 @@
             return;
         }
         logListEl.innerHTML = currentAdblockLogs
-            .slice(0, 30)
+            .slice(0, 40)
             .map((log) => {
             return `
           <div class="log-item">
@@ -613,25 +670,36 @@
         currentRuleFilter = query;
         renderBlockedDomainsList();
     }
-    // AdBlock Rule Actions
-    function addAdblockDomain() {
-        const input = document.getElementById('newAdblockDomainInput');
-        if (!input)
-            return;
-        const domain = cleanDomainInput(input.value);
-        if (!domain)
-            return;
-        sendIpc({ type: 'AddAdblockDomain', domain });
-        input.value = '';
-        if (!currentAdblockDomains.includes(domain)) {
-            currentAdblockDomains.unshift(domain);
-            renderAdblockDomainsList();
+    // AdBlock / uBlock Actions
+    function toggleFilterList(listId, enabled) {
+        sendIpc({ type: 'ToggleFilterList', list_id: listId, enabled });
+        const list = currentFilterLists.find((l) => l.id === listId);
+        if (list) {
+            list.enabled = enabled;
+            renderAdblockStats();
         }
     }
-    function removeAdblockDomain(domain) {
-        sendIpc({ type: 'RemoveAdblockDomain', domain });
-        currentAdblockDomains = currentAdblockDomains.filter((d) => d !== domain);
-        renderAdblockDomainsList();
+    function addCustomRule() {
+        const input = document.getElementById('newCustomRuleInput');
+        if (!input)
+            return;
+        const rule = input.value.trim();
+        if (!rule)
+            return;
+        sendIpc({ type: 'AddCustomFilterRule', rule });
+        input.value = '';
+        if (!currentCustomRules.includes(rule)) {
+            currentCustomRules.unshift(rule);
+            renderCustomRules();
+            renderAdblockStats();
+        }
+    }
+    function removeCustomRule(encodedRule) {
+        const rule = decodeURIComponent(encodedRule);
+        sendIpc({ type: 'RemoveCustomFilterRule', rule });
+        currentCustomRules = currentCustomRules.filter((r) => r !== rule);
+        renderCustomRules();
+        renderAdblockStats();
     }
     function addAdblockWhitelist() {
         const input = document.getElementById('newAdblockWhitelistDomainInput');
@@ -652,21 +720,13 @@
         currentAdblockWhitelistedDomains = currentAdblockWhitelistedDomains.filter((d) => d !== domain);
         renderAdblockWhitelistedDomainsList();
     }
-    function resetAdblockRules() {
-        if (confirm('Reset all AdBlock filter rules and whitelist exceptions to Titan defaults?')) {
-            sendIpc({ type: 'ResetAdblockRules' });
-        }
-    }
     function clearAdblockLogs() {
         currentAdblockLogs = [];
         renderAdblockActivityLogs();
+        renderAdblockStats();
         sendIpc({ type: 'ClearAdblockLogs' });
     }
-    function filterAdblockRules(query) {
-        currentAdblockRuleFilter = query;
-        renderAdblockDomainsList();
-    }
-    // Update window.initSettings to populate blocklist, whitelist and activity logs
+    // Update window.initSettings to populate blocklists, filter subscriptions, custom rules, stats & logs
     const origInitSettings = window.initSettings;
     window.initSettings = function (state) {
         if (origInitSettings)
@@ -680,14 +740,26 @@
                 currentWhitelistedDomains = [...state.settings.whitelisted_domains];
                 renderWhitelistedDomainsList();
             }
-            if (Array.isArray(state.settings.adblock_blocked_domains)) {
-                currentAdblockDomains = [...state.settings.adblock_blocked_domains];
-                renderAdblockDomainsList();
-            }
             if (Array.isArray(state.settings.adblock_whitelisted_domains)) {
                 currentAdblockWhitelistedDomains = [...state.settings.adblock_whitelisted_domains];
                 renderAdblockWhitelistedDomainsList();
             }
+            if (Array.isArray(state.settings.adblock_custom_rules)) {
+                currentCustomRules = [...state.settings.adblock_custom_rules];
+                renderCustomRules();
+            }
+        }
+        if (Array.isArray(state.adblock_filter_lists)) {
+            currentFilterLists = [...state.adblock_filter_lists];
+            renderFilterLists();
+        }
+        if (Array.isArray(state.adblock_custom_rules)) {
+            currentCustomRules = [...state.adblock_custom_rules];
+            renderCustomRules();
+        }
+        if (state.adblock_stats) {
+            currentAdblockStats = { ...state.adblock_stats };
+            renderAdblockStats();
         }
         if (Array.isArray(state.blocked_logs)) {
             currentBlockedLogs = [...state.blocked_logs];
@@ -696,6 +768,7 @@
         if (Array.isArray(state.adblock_logs)) {
             currentAdblockLogs = [...state.adblock_logs];
             renderAdblockActivityLogs();
+            renderAdblockStats();
         }
     };
     window.addBlockedDomain = addBlockedDomain;
@@ -704,11 +777,10 @@
     window.removeWhitelistedDomain = removeWhitelistedDomain;
     window.resetPrivacyRules = resetPrivacyRules;
     window.filterBlockedRules = filterBlockedRules;
-    window.addAdblockDomain = addAdblockDomain;
-    window.removeAdblockDomain = removeAdblockDomain;
+    window.toggleFilterList = toggleFilterList;
+    window.addCustomRule = addCustomRule;
+    window.removeCustomRule = removeCustomRule;
     window.addAdblockWhitelist = addAdblockWhitelist;
     window.removeAdblockWhitelist = removeAdblockWhitelist;
-    window.resetAdblockRules = resetAdblockRules;
     window.clearAdblockLogs = clearAdblockLogs;
-    window.filterAdblockRules = filterAdblockRules;
 })();

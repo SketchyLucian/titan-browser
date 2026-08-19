@@ -29,6 +29,22 @@ interface BlockedRequestLog {
   timestamp: string;
 }
 
+interface FilterListConfig {
+  id: string;
+  name: string;
+  description: string;
+  count: number;
+  enabled: boolean;
+}
+
+interface AdblockStats {
+  total_rules: number;
+  blocked_requests_count: number;
+  cosmetic_elements_hidden_count: number;
+  scriptlets_injected_count: number;
+  estimated_bandwidth_saved_bytes: number;
+}
+
 interface BrowserSettings {
   search_engine: string;
   theme: string;
@@ -50,6 +66,8 @@ interface BrowserSettings {
   adblock_aggressive_mode?: boolean;
   adblock_blocked_domains?: string[];
   adblock_whitelisted_domains?: string[];
+  adblock_filter_lists?: string[];
+  adblock_custom_rules?: string[];
 }
 
 interface BrowserState {
@@ -64,12 +82,17 @@ interface BrowserState {
   is_maximized?: boolean;
   blocked_logs?: BlockedRequestLog[];
   adblock_logs?: BlockedRequestLog[];
+  adblock_filter_lists?: FilterListConfig[];
+  adblock_stats?: AdblockStats;
 }
 
 interface SettingsInitState extends Partial<BrowserState> {
   active_section?: string;
   blocked_logs?: BlockedRequestLog[];
   adblock_logs?: BlockedRequestLog[];
+  adblock_filter_lists?: FilterListConfig[];
+  adblock_stats?: AdblockStats;
+  adblock_custom_rules?: string[];
 }
 
 type IpcOutMessage =
@@ -104,6 +127,9 @@ type IpcOutMessage =
   | { type: 'RemoveAdblockWhitelist'; domain: string }
   | { type: 'ResetAdblockRules' }
   | { type: 'ClearAdblockLogs' }
+  | { type: 'ToggleFilterList'; list_id: string; enabled: boolean }
+  | { type: 'AddCustomFilterRule'; rule: string }
+  | { type: 'RemoveCustomFilterRule'; rule: string }
   | { type: 'ReportBlockedRequest'; domain: string; url: string; req_type: string }
   | { type: 'ReportBlockedAd'; domain: string; url: string; req_type: string }
   | { type: 'OpenThemes' }
@@ -116,6 +142,7 @@ type IpcOutMessage =
   | { type: 'MinimizeWindow' }
   | { type: 'ToggleMaximizeWindow' }
   | { type: 'CloseWindow' };
+
 
 interface Window {
   ipc?: {

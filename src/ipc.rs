@@ -72,11 +72,27 @@ pub struct BrowserSettings {
     pub adblock_blocked_domains: Vec<String>,
     #[serde(default)]
     pub adblock_whitelisted_domains: Vec<String>,
+    #[serde(default = "default_filter_lists")]
+    pub adblock_filter_lists: Vec<String>,
+    #[serde(default)]
+    pub adblock_custom_rules: Vec<String>,
+}
+
+pub fn default_filter_lists() -> Vec<String> {
+    vec![
+        "easylist".into(),
+        "easyprivacy".into(),
+        "ublock_filters".into(),
+        "ublock_badware".into(),
+        "ublock_privacy".into(),
+        "ublock_quick_fixes".into(),
+    ]
 }
 
 fn default_true() -> bool {
     true
 }
+
 
 pub fn default_blocked_domains() -> Vec<String> {
     vec![
@@ -179,6 +195,8 @@ impl Default for BrowserSettings {
             adblock_aggressive_mode: false,
             adblock_blocked_domains: default_adblock_domains(),
             adblock_whitelisted_domains: vec![],
+            adblock_filter_lists: default_filter_lists(),
+            adblock_custom_rules: vec![],
         }
     }
 }
@@ -195,7 +213,10 @@ pub struct IpcBrowserState {
     pub is_maximized: bool,
     pub blocked_logs: Vec<BlockedRequestLog>,
     pub adblock_logs: Vec<BlockedRequestLog>,
+    pub adblock_filter_lists: Vec<crate::adblock_engine::FilterListConfig>,
+    pub adblock_stats: crate::adblock_engine::AdblockStats,
 }
+
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
@@ -286,7 +307,18 @@ pub enum IpcIncoming {
     },
     ResetAdblockRules,
     ClearAdblockLogs,
+    ToggleFilterList {
+        list_id: String,
+        enabled: bool,
+    },
+    AddCustomFilterRule {
+        rule: String,
+    },
+    RemoveCustomFilterRule {
+        rule: String,
+    },
     ReportBlockedRequest {
+
         domain: String,
         url: String,
         req_type: String,

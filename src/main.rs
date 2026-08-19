@@ -1,11 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod adblock_engine;
 mod browser;
 mod drag_util;
 mod ipc;
 mod menu_util;
 mod storage;
 mod url_utils;
+
 
 use browser::{BrowserManager, UserEvent};
 use storage::get_app_data_dir;
