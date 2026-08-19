@@ -247,6 +247,9 @@ impl BrowserManager {
                 const host = (window.location.hostname || '').toLowerCase();
                 const href = (window.location.href || '').toLowerCase();
 
+                // If on internal / blank URL, stop here
+                if (!host || href.startsWith('titan://') || href.startsWith('about:')) return;
+
                 // 1. Clean up any previous forced styles if adaptation is off
                 try {{
                     const preCanvas = document.getElementById('titan-pre-dark-canvas');
@@ -255,90 +258,11 @@ impl BrowserManager {
                     if (!forceAdaptation && adaptStyle) adaptStyle.remove();
                 }} catch(e) {{}}
 
-                // If on internal / blank URL, stop here
-                if (!host || href.startsWith('titan://') || href.startsWith('about:')) return;
-
-                // 2. Dynamic matchMedia & prefers-color-scheme Event System
-                try {{
-                    window._titanIsLight = isLight;
-                    window._titanMqlListeners = window._titanMqlListeners || [];
-
-                    if (!window._titanMatchMediaPatched) {{
-                        window._titanMatchMediaPatched = true;
-                        const origMM = window.matchMedia ? window.matchMedia.bind(window) : null;
-
-                        window.matchMedia = function(q) {{
-                            const queryStr = String(q || '');
-                            if (queryStr.includes('prefers-color-scheme')) {{
-                                const isDarkQuery = queryStr.includes('dark');
-                                const isLightQuery = queryStr.includes('light');
-
-                                const mql = {{
-                                    get matches() {{
-                                        return isDarkQuery ? !window._titanIsLight : (isLightQuery ? !!window._titanIsLight : false);
-                                    }},
-                                    media: queryStr,
-                                    onchange: null,
-                                    addListener: function(fn) {{
-                                        if (typeof fn === 'function' && !window._titanMqlListeners.includes(fn)) {{
-                                            window._titanMqlListeners.push(fn);
-                                        }}
-                                    }},
-                                    removeListener: function(fn) {{
-                                        window._titanMqlListeners = window._titanMqlListeners.filter(l => l !== fn);
-                                    }},
-                                    addEventListener: function(type, fn) {{
-                                        if (type === 'change' && typeof fn === 'function' && !window._titanMqlListeners.includes(fn)) {{
-                                            window._titanMqlListeners.push(fn);
-                                        }}
-                                    }},
-                                    removeEventListener: function(type, fn) {{
-                                        if (type === 'change') {{
-                                            window._titanMqlListeners = window._titanMqlListeners.filter(l => l !== fn);
-                                        }}
-                                    }},
-                                    dispatchEvent: function(e) {{
-                                        window._titanMqlListeners.forEach(fn => {{
-                                            try {{ fn(e); }} catch(err) {{}}
-                                        }});
-                                        return true;
-                                    }}
-                                }};
-                                return mql;
-                            }}
-                            return origMM ? origMM(queryStr) : {{ matches: false, media: queryStr, addListener: function(){{}}, removeListener: function(){{}}, addEventListener: function(){{}}, removeEventListener: function(){{}} }};
-                        }};
-                    }}
-
-                    // Dispatch change event to all registered reactive framework listeners (React, Vue, Tailwind, next-themes)
-                    if (window._titanMqlListeners && window._titanMqlListeners.length > 0) {{
-                        const eventObj = {{
-                            matches: !isLight,
-                            media: '(prefers-color-scheme: dark)',
-                            type: 'change',
-                            currentTarget: window,
-                            target: window
-                        }};
-                        window._titanMqlListeners.forEach(fn => {{
-                            try {{ fn(eventObj); }} catch(e) {{}}
-                        }});
-                    }}
-                }} catch(e) {{}}
-
-                // 3. Document Root color-scheme & Meta Tag
+                // 2. Document Root color-scheme & Meta Tag
                 try {{
                     const applyColorScheme = () => {{
                         if (document.documentElement) {{
                             document.documentElement.style.colorScheme = targetMode;
-                        }}
-                        if (document.head) {{
-                            let meta = document.querySelector('meta[name="color-scheme"]');
-                            if (!meta) {{
-                                meta = document.createElement('meta');
-                                meta.name = 'color-scheme';
-                                document.head.appendChild(meta);
-                            }}
-                            meta.content = targetMode;
                         }}
                     }};
                     applyColorScheme();
@@ -347,7 +271,7 @@ impl BrowserManager {
                     }}
                 }} catch(e) {{}}
 
-                // 4. Comprehensive Framework & Library Integration (VitePress, Docusaurus, Tailwind, Starlight, Astro, Next.js, Bootstrap)
+                // 3. Framework & Library Integration
                 function applyFrameworkThemes() {{
                     try {{
                         const html = document.documentElement;
@@ -357,18 +281,11 @@ impl BrowserManager {
                             html.classList.remove(removeMode);
                             html.classList.add(targetMode);
 
-                            // Data attribute conventions
                             ['data-theme', 'data-color-mode', 'data-bs-theme', 'data-mode', 'data-theme-mode'].forEach(attr => {{
                                 if (html.hasAttribute(attr)) {{
                                     html.setAttribute(attr, targetMode);
                                 }}
                             }});
-
-                            // VitePress & Starlight explicit class switches
-                            if (html.classList.contains('dark') || html.classList.contains('light')) {{
-                                html.classList.remove(removeMode);
-                                html.classList.add(targetMode);
-                            }}
                         }}
 
                         if (body) {{
@@ -382,28 +299,6 @@ impl BrowserManager {
                                 }}
                             }});
                         }}
-
-                        // Synchronize client-side storage keys for documentation frameworks
-                        const storageKeys = [
-                            'vitepress-theme-appearance',
-                            'theme',
-                            'color-theme',
-                            'color-mode',
-                            'docusaurus.theme',
-                            'starlight-theme',
-                            'astro-theme',
-                            'tailwind-theme',
-                            'next-themes-theme',
-                            'theme-preference',
-                            'chakra-ui-color-mode',
-                            'mantine-color-scheme',
-                            'theme-choice'
-                        ];
-                        storageKeys.forEach(k => {{
-                            try {{
-                                localStorage.setItem(k, targetMode);
-                            }} catch(e) {{}}
-                        }});
                     }} catch(e) {{}}
                 }}
 
@@ -412,7 +307,7 @@ impl BrowserManager {
                     document.addEventListener('DOMContentLoaded', applyFrameworkThemes, {{ once: true }});
                 }}
 
-                // 5. Major Website Adaptations (YouTube, GitHub, Reddit, Wikipedia)
+                // 4. Major Website Adaptations
                 try {{
                     const isYouTube = host.includes('youtube.com') || host.includes('youtu.be');
                     if (isYouTube && document.documentElement) {{
@@ -423,13 +318,6 @@ impl BrowserManager {
                         }}
                     }}
 
-                    const isGitHub = host.includes('github.com');
-                    if (isGitHub && document.documentElement) {{
-                        document.documentElement.setAttribute('data-color-mode', targetMode);
-                        document.documentElement.setAttribute('data-dark-theme', 'dark');
-                        document.documentElement.setAttribute('data-light-theme', 'light');
-                    }}
-
                     const isWikipedia = host.includes('wikipedia.org');
                     if (isWikipedia && document.documentElement) {{
                         document.documentElement.classList.remove(isLight ? 'skin-theme-clientpref-night' : 'skin-theme-clientpref-day');
@@ -437,7 +325,7 @@ impl BrowserManager {
                     }}
                 }} catch(e) {{}}
 
-                // 6. Universal Webpage Theme Adaptation (Dark Reader) for light-only sites
+                // 5. Universal Webpage Theme Adaptation (Dark Reader) for light-only sites
                 if (forceAdaptation) {{
                     function adaptTheme() {{
                         const isNativelyAdaptive = host.includes('google.') || host.includes('youtube.com') || host.includes('youtu.be') || host.includes('github.com') || host.includes('gitlab.com') || host.includes('reddit.com') || host.includes('duckduckgo.com') || host.includes('bing.com') || host.includes('x.com') || host.includes('twitter.com') || host.includes('tauri.app') || host.includes('vitepress') || host.includes('docusaurus');
@@ -473,12 +361,6 @@ impl BrowserManager {
         let dnt = self.settings.do_not_track;
         let gpc = self.settings.global_privacy_control;
         let block_webrtc = self.settings.block_webrtc_leak;
-        let block_fingerprint = self.settings.block_fingerprinting;
-        let block_auditing = self.settings.block_hyperlink_auditing;
-        let blocked_domains_json = serde_json::to_string(&self.settings.blocked_domains)
-            .unwrap_or_else(|_| "[]".into());
-        let whitelisted_domains_json = serde_json::to_string(&self.settings.whitelisted_domains)
-            .unwrap_or_else(|_| "[]".into());
 
         format!(
             r#"
@@ -487,10 +369,6 @@ impl BrowserManager {
                     const dnt = {dnt};
                     const gpc = {gpc};
                     const blockWebrtc = {block_webrtc};
-                    const blockFingerprint = {block_fingerprint};
-                    const blockAuditing = {block_auditing};
-                    const BLOCKLIST = {blocked_domains_json};
-                    const WHITELIST = {whitelisted_domains_json};
 
                     if (dnt) {{
                         try {{
@@ -520,152 +398,12 @@ impl BrowserManager {
                             }}
                         }} catch(e) {{}}
                     }}
-
-                    if (blockFingerprint) {{
-                        try {{
-                            const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-                            HTMLCanvasElement.prototype.toDataURL = function(type, ...args) {{
-                                try {{
-                                    const ctx = this.getContext('2d');
-                                    if (ctx) {{
-                                        const imgData = ctx.getImageData(0, 0, Math.min(this.width, 16), Math.min(this.height, 16));
-                                        for (let i = 0; i < imgData.data.length; i += 4) {{
-                                            imgData.data[i] = (imgData.data[i] ^ 1);
-                                        }}
-                                        ctx.putImageData(imgData, 0, 0);
-                                    }}
-                                }} catch(e) {{}}
-                                return origToDataURL.apply(this, [type, ...args]);
-                            }};
-
-                            if (window.AudioBuffer && window.AudioBuffer.prototype.getChannelData) {{
-                                const origGetChannelData = window.AudioBuffer.prototype.getChannelData;
-                                window.AudioBuffer.prototype.getChannelData = function(channel) {{
-                                    const data = origGetChannelData.apply(this, [channel]);
-                                    for (let i = 0; i < Math.min(data.length, 100); i += 10) {{
-                                        data[i] += 0.00000001;
-                                    }}
-                                    return data;
-                                }};
-                            }}
-
-                            if (navigator.getBattery) {{
-                                navigator.getBattery = () => Promise.resolve({{
-                                    charging: true,
-                                    chargingTime: 0,
-                                    dischargingTime: Infinity,
-                                    level: 1.0,
-                                    addEventListener: () => {{}},
-                                    removeEventListener: () => {{}}
-                                }});
-                            }}
-
-                            if (navigator.connection) {{
-                                try {{
-                                    Object.defineProperty(navigator, 'connection', {{
-                                        get: () => ({{ effectiveType: '4g', rtt: 50, downlink: 10, saveData: false }}),
-                                        configurable: true
-                                    }});
-                                }} catch(e) {{}}
-                            }}
-                        }} catch(e) {{}}
-                    }}
-
-                    if (blockAuditing) {{
-                        try {{
-                            const isBlockedUrl = function(u, reqType) {{
-                                if (!u) return false;
-                                const str = String(u).toLowerCase();
-                                if (WHITELIST.some(d => str.includes(d.toLowerCase()))) return false;
-                                const match = BLOCKLIST.find(d => str.includes(d.toLowerCase()));
-                                if (match) {{
-                                    try {{
-                                        window.ipc.postMessage(JSON.stringify({{
-                                            type: 'ReportBlockedRequest',
-                                            domain: match,
-                                            url: str.substring(0, 120),
-                                            req_type: reqType || 'interceptor'
-                                        }}));
-                                    }} catch(e) {{}}
-                                    return true;
-                                }}
-                                return false;
-                            }};
-
-                            // 1. Intercept window.fetch
-                            if (window.fetch) {{
-                                const origFetch = window.fetch.bind(window);
-                                window.fetch = function(input, init) {{
-                                    const urlStr = typeof input === 'string' ? input : (input && input.url ? input.url : '');
-                                    if (isBlockedUrl(urlStr, 'fetch')) {{
-                                        return Promise.resolve(new Response('', {{ status: 204, statusText: 'No Content (Blocked by Titan)' }}));
-                                    }}
-                                    return origFetch(input, init);
-                                }};
-                            }}
-
-                            // 2. Intercept XMLHttpRequest
-                            if (window.XMLHttpRequest) {{
-                                const origOpen = XMLHttpRequest.prototype.open;
-                                const origSend = XMLHttpRequest.prototype.send;
-                                XMLHttpRequest.prototype.open = function(method, url, ...rest) {{
-                                    this._titanBlocked = isBlockedUrl(url, 'xhr');
-                                    if (this._titanBlocked) {{
-                                        return origOpen.apply(this, [method, 'about:blank', ...rest]);
-                                    }}
-                                    return origOpen.apply(this, [method, url, ...rest]);
-                                }};
-                                XMLHttpRequest.prototype.send = function(...args) {{
-                                    if (this._titanBlocked) {{
-                                        try {{
-                                            Object.defineProperty(this, 'status', {{ get: () => 204 }});
-                                            Object.defineProperty(this, 'readyState', {{ get: () => 4 }});
-                                            Object.defineProperty(this, 'responseText', {{ get: () => '' }});
-                                            if (this.onreadystatechange) this.onreadystatechange(new Event('readystatechange'));
-                                            if (this.onload) this.onload(new ProgressEvent('load'));
-                                        }} catch(e) {{}}
-                                        return;
-                                    }}
-                                    return origSend.apply(this, args);
-                                }};
-                            }}
-
-                            // 3. Intercept navigator.sendBeacon
-                            if (navigator.sendBeacon) {{
-                                const origBeacon = navigator.sendBeacon.bind(navigator);
-                                navigator.sendBeacon = function(url, data) {{
-                                    if (isBlockedUrl(url, 'beacon')) {{
-                                        return true; // Pretend success, drop telemetry payload
-                                    }}
-                                    return origBeacon(url, data);
-                                }};
-                            }}
-
-                            // 4. Strip <a ping> attributes
-                            const stripPing = () => {{
-                                document.querySelectorAll('a[ping]').forEach(a => a.removeAttribute('ping'));
-                            }};
-                            if (document.readyState === 'loading') {{
-                                document.addEventListener('DOMContentLoaded', stripPing, {{ once: true }});
-                            }} else {{
-                                stripPing();
-                            }}
-                            document.addEventListener('click', (e) => {{
-                                const a = e.target && e.target.closest ? e.target.closest('a') : null;
-                                if (a && a.hasAttribute('ping')) a.removeAttribute('ping');
-                            }}, true);
-                        }} catch(e) {{}}
-                    }}
                 }} catch(e) {{}}
             }})();
             "#,
             dnt = dnt,
             gpc = gpc,
             block_webrtc = block_webrtc,
-            block_fingerprint = block_fingerprint,
-            block_auditing = block_auditing,
-            blocked_domains_json = blocked_domains_json,
-            whitelisted_domains_json = whitelisted_domains_json,
         )
     }
 
@@ -673,10 +411,6 @@ impl BrowserManager {
         let enabled = self.settings.adblock_enabled;
         let block_video_ads = self.settings.adblock_block_video_ads;
         let cosmetic_filtering = self.settings.adblock_cosmetic_filtering;
-        let block_popups = self.settings.adblock_block_popups;
-        let aggressive = self.settings.adblock_aggressive_mode;
-        let blocked_domains_json = serde_json::to_string(&self.settings.adblock_blocked_domains)
-            .unwrap_or_else(|_| "[]".into());
         let whitelisted_domains_json = serde_json::to_string(&self.settings.adblock_whitelisted_domains)
             .unwrap_or_else(|_| "[]".into());
 
@@ -689,100 +423,19 @@ impl BrowserManager {
 
                     const blockVideoAds = {block_video_ads};
                     const cosmeticFiltering = {cosmetic_filtering};
-                    const blockPopups = {block_popups};
-                    const aggressive = {aggressive};
-                    const AD_BLOCKLIST = {blocked_domains_json};
                     const AD_WHITELIST = {whitelisted_domains_json};
 
                     const currentHost = (window.location.hostname || '').toLowerCase();
                     const currentHref = (window.location.href || '').toLowerCase();
+
+                    if (!currentHost || currentHref.startsWith('titan://') || currentHref.startsWith('about:')) return;
 
                     // Check if current website is whitelisted
                     if (AD_WHITELIST.some(d => d && (currentHost === d.toLowerCase() || currentHost.endsWith('.' + d.toLowerCase())))) {{
                         return; // Ad blocking disabled for this whitelisted site
                     }}
 
-                    // Helper to test if a request URL matches ad server domains
-                    const isAdUrl = function(u, reqType) {{
-                        if (!u) return false;
-                        const str = String(u).toLowerCase();
-                        if (AD_WHITELIST.some(d => d && str.includes(d.toLowerCase()))) return false;
-                        const match = AD_BLOCKLIST.find(d => d && str.includes(d.toLowerCase()));
-                        if (match) {{
-                            try {{
-                                window.ipc.postMessage(JSON.stringify({{
-                                    type: 'ReportBlockedAd',
-                                    domain: match,
-                                    url: str.substring(0, 120),
-                                    req_type: reqType || 'network'
-                                }}));
-                            }} catch(e) {{}}
-                            return true;
-                        }}
-                        if (aggressive) {{
-                            if (str.includes('/ads.js') || str.includes('/pagead/') || str.includes('doubleclick') || str.includes('/advertisement')) {{
-                                try {{
-                                    window.ipc.postMessage(JSON.stringify({{
-                                        type: 'ReportBlockedAd',
-                                        domain: 'heuristic-rule',
-                                        url: str.substring(0, 120),
-                                        req_type: reqType || 'heuristic'
-                                    }}));
-                                }} catch(e) {{}}
-                                return true;
-                            }}
-                        }}
-                        return false;
-                    }};
-
-                    // 1. Intercept Network Requests (fetch, xhr, beacon)
-                    if (window.fetch) {{
-                        const origFetch = window.fetch.bind(window);
-                        window.fetch = function(input, init) {{
-                            const urlStr = typeof input === 'string' ? input : (input && input.url ? input.url : '');
-                            if (isAdUrl(urlStr, 'fetch')) {{
-                                return Promise.resolve(new Response('', {{ status: 204, statusText: 'No Content (Blocked by Titan AdBlock)' }}));
-                            }}
-                            return origFetch(input, init);
-                        }};
-                    }}
-
-                    if (window.XMLHttpRequest) {{
-                        const origOpen = XMLHttpRequest.prototype.open;
-                        const origSend = XMLHttpRequest.prototype.send;
-                        XMLHttpRequest.prototype.open = function(method, url, ...rest) {{
-                            this._titanAdBlocked = isAdUrl(url, 'xhr');
-                            if (this._titanAdBlocked) {{
-                                return origOpen.apply(this, [method, 'about:blank', ...rest]);
-                            }}
-                            return origOpen.apply(this, [method, url, ...rest]);
-                        }};
-                        XMLHttpRequest.prototype.send = function(...args) {{
-                            if (this._titanAdBlocked) {{
-                                try {{
-                                    Object.defineProperty(this, 'status', {{ get: () => 204 }});
-                                    Object.defineProperty(this, 'readyState', {{ get: () => 4 }});
-                                    Object.defineProperty(this, 'responseText', {{ get: () => '' }});
-                                    if (this.onreadystatechange) this.onreadystatechange(new Event('readystatechange'));
-                                    if (this.onload) this.onload(new ProgressEvent('load'));
-                                }} catch(e) {{}}
-                                return;
-                            }}
-                            return origSend.apply(this, args);
-                        }};
-                    }}
-
-                    if (navigator.sendBeacon) {{
-                        const origBeacon = navigator.sendBeacon.bind(navigator);
-                        navigator.sendBeacon = function(url, data) {{
-                            if (isAdUrl(url, 'beacon')) {{
-                                return true;
-                            }}
-                            return origBeacon(url, data);
-                        }};
-                    }}
-
-                    // 2. Cosmetic Element Hiding (CSS rules)
+                    // 1. Cosmetic Element Hiding (CSS rules)
                     if (cosmeticFiltering) {{
                         const adCss = `
                             ins.adsbygoogle,
@@ -801,7 +454,6 @@ impl BrowserManager {
                             [id*="ad-slot"],
                             [class*="ad-placement"],
                             [aria-label="advertisement"],
-                            [aria-label="Sponsored"],
                             ytd-promoted-video-renderer,
                             ytd-promoted-sparkles-web-renderer,
                             ytd-display-ad-renderer,
@@ -843,11 +495,10 @@ impl BrowserManager {
                         }}
                     }}
 
-                    // 3. Video Ad Auto-Skipper & Fast-Forward (YouTube, HTML5 Video)
-                    if (blockVideoAds) {{
+                    // 2. Video Ad Auto-Skipper & Fast-Forward (Only active on YouTube)
+                    if (blockVideoAds && (currentHost.includes('youtube.com') || currentHost.includes('youtu.be'))) {{
                         function handleVideoAds() {{
                             try {{
-                                // Skip / close buttons
                                 const skipSelectors = [
                                     '.ytp-ad-skip-button',
                                     '.ytp-ad-skip-button-modern',
@@ -866,7 +517,6 @@ impl BrowserManager {
                                     }}
                                 }}
 
-                                // Check video players currently showing ads
                                 const adElements = document.querySelectorAll('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
                                 if (adElements.length > 0) {{
                                     const videos = document.querySelectorAll('video');
@@ -883,29 +533,12 @@ impl BrowserManager {
 
                         setInterval(handleVideoAds, 350);
                     }}
-
-                    // 4. Pop-up Interceptor
-                    if (blockPopups) {{
-                        const origWindowOpen = window.open;
-                        window.open = function(url, target, features) {{
-                            if (url && isAdUrl(url, 'popup')) {{
-                                return null;
-                            }}
-                            if (url && (url.includes('popads') || url.includes('popcash') || url.includes('propellerads') || url.includes('adcash'))) {{
-                                return null;
-                            }}
-                            return origWindowOpen.call(window, url, target, features);
-                        }};
-                    }}
                 }} catch(e) {{}}
             }})();
             "#,
             enabled = enabled,
             block_video_ads = block_video_ads,
             cosmetic_filtering = cosmetic_filtering,
-            block_popups = block_popups,
-            aggressive = aggressive,
-            blocked_domains_json = blocked_domains_json,
             whitelisted_domains_json = whitelisted_domains_json,
         )
     }
@@ -949,21 +582,9 @@ impl BrowserManager {
         let proxy_load = self.proxy.clone();
         let tab_id_copy = tab_id;
         let is_internal = is_newtab || is_settings;
-        let theme_script = if is_internal {
-            "".to_string()
-        } else {
-            self.get_theme_injection_script()
-        };
-        let privacy_script = if is_internal {
-            "".to_string()
-        } else {
-            self.get_privacy_injection_script()
-        };
-        let adblock_script = if is_internal {
-            "".to_string()
-        } else {
-            self.get_adblock_injection_script()
-        };
+        let theme_script = self.get_theme_injection_script();
+        let privacy_script = self.get_privacy_injection_script();
+        let adblock_script = self.get_adblock_injection_script();
 
         let init_script = format!(
             r#"
@@ -1097,11 +718,17 @@ impl BrowserManager {
     pub fn switch_tab(&mut self, target_id: u32) {
         let content_bounds = self.get_content_bounds();
 
-        // 1. Show, reposition and focus the target active tab first to eliminate visual gaps
+        // 1. Hide all other tabs first so their deactivation does not steal focus or block hit testing
+        for tab in &mut self.tabs {
+            if tab.id != target_id {
+                let _ = tab.webview.set_visible(false);
+            }
+        }
+
+        // 2. Show and reposition the target active tab
         if let Some(active_tab) = self.tabs.iter_mut().find(|t| t.id == target_id) {
             let _ = active_tab.webview.set_bounds(content_bounds);
             let _ = active_tab.webview.set_visible(true);
-            let _ = active_tab.webview.focus();
             if let Ok(current_url) = active_tab.webview.url() {
                 if !current_url.is_empty() && current_url != "about:blank" {
                     active_tab.url = current_url;
@@ -1109,15 +736,13 @@ impl BrowserManager {
             }
         }
 
-        // 2. Hide all other tabs so they don't block hit testing or steal focus
-        for tab in &mut self.tabs {
-            if tab.id != target_id {
-                let _ = tab.webview.set_visible(false);
-            }
-        }
-
         self.active_tab_id = Some(target_id);
         self.sync_full_state();
+
+        // 3. Focus the active tab after state synchronization to ensure it receives user interaction
+        if let Some(active_tab) = self.tabs.iter_mut().find(|t| t.id == target_id) {
+            let _ = active_tab.webview.focus();
+        }
     }
 
     pub fn close_tab(&mut self, target_id: u32) {
@@ -1151,9 +776,11 @@ impl BrowserManager {
                     tab.title = "New Tab".into();
                     tab.is_loading = false;
                     let _ = tab.webview.load_html(&html);
-                    let _ = tab.webview.focus();
                 }
                 self.sync_tab_update(active_id);
+                if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
+                    let _ = tab.webview.focus();
+                }
             }
             return;
         }
@@ -1189,9 +816,11 @@ impl BrowserManager {
                     };
                     tab.is_loading = false;
                     let _ = tab.webview.load_html(&html);
-                    let _ = tab.webview.focus();
                 }
                 self.sync_tab_update(active_id);
+                if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
+                    let _ = tab.webview.focus();
+                }
             }
             return;
         }
@@ -1208,9 +837,11 @@ impl BrowserManager {
                 tab.url = normalized.clone();
                 tab.is_loading = true;
                 let _ = tab.webview.load_url(&normalized);
-                let _ = tab.webview.focus();
             }
             self.sync_tab_update(active_id);
+            if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
+                let _ = tab.webview.focus();
+            }
         }
     }
 
@@ -1218,6 +849,8 @@ impl BrowserManager {
         if let Some(active_id) = self.active_tab_id {
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                 let _ = tab.webview.evaluate_script("window.history.back();");
+            }
+            if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
                 let _ = tab.webview.focus();
             }
         }
@@ -1227,6 +860,8 @@ impl BrowserManager {
         if let Some(active_id) = self.active_tab_id {
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                 let _ = tab.webview.evaluate_script("window.history.forward();");
+            }
+            if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
                 let _ = tab.webview.focus();
             }
         }
@@ -1245,19 +880,19 @@ impl BrowserManager {
                 let html = self.get_newtab_html();
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                     let _ = tab.webview.load_html(&html);
-                    let _ = tab.webview.focus();
                 }
             } else if Self::is_settings_url(&tab_url) {
                 let html = self.get_settings_html("general");
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                     let _ = tab.webview.load_html(&html);
-                    let _ = tab.webview.focus();
                 }
             } else {
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                     let _ = tab.webview.evaluate_script("window.location.reload();");
-                    let _ = tab.webview.focus();
                 }
+            }
+            if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
+                let _ = tab.webview.focus();
             }
         }
     }
@@ -1268,11 +903,12 @@ impl BrowserManager {
 
     pub fn set_zoom(&mut self, zoom: f64) {
         self.zoom = zoom.clamp(0.4, 3.0);
-        if let Some(active_id) = self.active_tab_id {
-            if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
-                let _ = tab.webview.zoom(self.zoom);
-            }
+        let zoom_val = self.zoom;
+        for tab in &self.tabs {
+            let script = format!("document.body.style.zoom = '{}';", zoom_val);
+            let _ = tab.webview.evaluate_script(&script);
         }
+        self.sync_full_state();
     }
 
     pub fn toggle_bookmark(&mut self, title: String, url: String) {
@@ -1338,8 +974,12 @@ impl BrowserManager {
     }
 
     pub fn on_page_load_finished(&mut self, tab_id: u32, url: String) {
-        let theme_script = self.get_theme_injection_script();
-        let adblock_script = self.get_adblock_injection_script();
+        let is_dark_reader = self.is_module_enabled("dark_reader");
+        let theme_script = if is_dark_reader {
+            Some(self.get_theme_injection_script())
+        } else {
+            None
+        };
 
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
             tab.is_loading = false;
@@ -1352,13 +992,20 @@ impl BrowserManager {
                 }
             }
 
-            // Inject matching theme script & adblock script for web content
+            // Inject matching theme script dynamically if dark reader is forced
             if !Self::is_internal_url(&tab.url) {
-                let _ = tab.webview.evaluate_script(&theme_script);
-                let _ = tab.webview.evaluate_script(&adblock_script);
+                if let Some(ref script) = theme_script {
+                    let _ = tab.webview.evaluate_script(script);
+                }
             }
         }
         self.sync_tab_update(tab_id);
+
+        if self.active_tab_id == Some(tab_id) {
+            if let Some(tab) = self.tabs.iter().find(|t| t.id == tab_id) {
+                let _ = tab.webview.focus();
+            }
+        }
     }
 
     pub fn update_tab_state(

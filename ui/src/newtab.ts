@@ -65,11 +65,6 @@ interface NewTabInitState {
         }
       });
     });
-
-    const input = document.getElementById('searchInput') as HTMLInputElement | null;
-    if (input) {
-      input.focus();
-    }
   }
 
   // Global methods

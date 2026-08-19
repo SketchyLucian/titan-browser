@@ -54,10 +54,6 @@
                 }
             });
         });
-        const input = document.getElementById('searchInput');
-        if (input) {
-            input.focus();
-        }
     }
     // Global methods
     window.navigate = navigate;
