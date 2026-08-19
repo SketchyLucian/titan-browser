@@ -26,7 +26,7 @@ pub fn apply_dark_window_attributes(window: &Window, bg_color: (u8, u8, u8)) {
         ) -> i32;
     }
 
-    let hwnd = window.hwnd() as isize;
+    let hwnd = window.hwnd();
     // COLORREF is 0x00BBGGRR
     let colorref = (bg_color.0 as u32) | ((bg_color.1 as u32) << 8) | ((bg_color.2 as u32) << 16);
     unsafe {

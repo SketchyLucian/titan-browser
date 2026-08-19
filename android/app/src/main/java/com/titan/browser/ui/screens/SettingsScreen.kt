@@ -255,7 +255,7 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "Version 0.1.0 • High-performance modern web browser",
+                        text = "Version 0.2.0 • High-performance modern web browser",
                         color = TitanTextSecondary,
                         fontSize = 13.sp
                     )

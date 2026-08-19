@@ -4,6 +4,7 @@ use tao::window::Window;
 #[cfg(target_os = "windows")]
 pub fn show_native_bookmark_context_menu(window: &Window) -> Option<u32> {
     #[repr(C)]
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     struct POINT {
         x: i32,
         y: i32,
@@ -33,7 +34,7 @@ pub fn show_native_bookmark_context_menu(window: &Window) -> Option<u32> {
     const TPM_NONOTIFY: u32 = 0x0080;
     const TPM_RIGHTBUTTON: u32 = 0x0002;
 
-    let hwnd = window.hwnd() as isize;
+    let hwnd = window.hwnd();
     let mut pt = POINT { x: 0, y: 0 };
     unsafe {
         GetCursorPos(&mut pt);

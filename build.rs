@@ -31,7 +31,7 @@ fn main() {
     res.compile().expect("Failed to compile Windows resource with icon");
 
     let _ = std::process::Command::new("cmd")
-        .args(&["/c", "npm run build"])
+        .args(["/c", "npm run build"])
         .status();
 
     println!("cargo:rerun-if-changed=assets/icon.ico");
