@@ -42,7 +42,6 @@ object AdblockManager {
         val cosmeticEnabled = settings.cosmeticFiltering
         val popupsBlocked = settings.blockPopups
         val videoAdsBlocked = settings.blockVideoAds
-        val aggressive = settings.aggressiveMode
 
         return """
             (function() {
@@ -75,7 +74,7 @@ object AdblockManager {
                         };
                     }
 
-                    // 3. Universal Cosmetic Element Hiding
+                    // 3. Targeted Cosmetic Ad Hiding
                     if ($cosmeticEnabled) {
                         const adCss = `
                             ins.adsbygoogle, [id^="google_ads_"], [id*="google_ads_iframe"], [id*="ScriptRoot"],
@@ -84,19 +83,6 @@ object AdblockManager {
                             [id*="ad-wrapper"], [class*="ad-slot"], [id*="ad-slot"], [class*="ad-placement"],
                             [aria-label="advertisement"], [aria-label="Sponsored"], .trc_rbox_div, .OUTBRAIN,
                             .taboola-placeholder, [class*="adbox"], [id*="adbox"], [class*="ad-frame"],
-                            [class*="share-bar"], [class*="floating-share"], [class*="shares-box"],
-                            .social-share, [id*="share-buttons"], [class*="share-container"],
-                            div[class*="share-sidebar"], .at-share-dock, .addthis_floating_style,
-                            .sharethis-inline-share-buttons, .st-sticky-share-buttons, div[class*="shares"],
-                            div[class*="share-btn"], div[class*="social-buttons"], div[class*="ShareBar"], div[class*="ShareButtons"],
-                            [class*="captcha-modal"], [id*="captcha-modal"], [class*="robot-modal"],
-                            [class*="robot-check"], [class*="verify-robot"], [id*="robot-check"],
-                            [class*="notification-prompt"], [class*="push-prompt"], [class*="push-modal"],
-                            [class*="ad-modal"], [class*="popup-modal"], [id*="popup-modal"],
-                            [class*="interstitial"], [id*="interstitial"], [class*="overlay-backdrop"],
-                            [id*="overlay-backdrop"], [class*="ad-overlay"], [id*="ad-overlay"],
-                            .modal-backdrop, .popup-backdrop,
-                            div[style*="z-index: 2147483647"], div[style*="z-index: 999999"], div[style*="z-index: 99999"],
                             ytd-promoted-video-renderer, ytd-promoted-sparkles-web-renderer,
                             ytd-display-ad-renderer, ytd-statement-banner-renderer,
                             ytd-in-feed-ad-layout-renderer, ytd-banner-promo-renderer,
@@ -118,49 +104,6 @@ object AdblockManager {
                         if (document.readyState === 'loading') {
                             document.addEventListener('DOMContentLoaded', injectAdStyle, { once: true });
                         }
-
-                        // Realtime Fake Robot Captcha & Annoyance Cleaner
-                        function cleanAnnoyances() {
-                            try {
-                                const modals = document.querySelectorAll('div, dialog, section');
-                                for (const el of modals) {
-                                    const text = (el.innerText || '').toLowerCase();
-                                    if (
-                                        (text.includes('kein roboter') || text.includes('not a robot') || text.includes('verify you are human') || text.includes('click allow') || text.includes('klicken sie auf den button')) &&
-                                        (el.querySelector('img, svg, button') || el.classList.contains('modal') || (el.style && (el.style.position === 'fixed' || el.style.position === 'absolute')))
-                                    ) {
-                                        if (el !== document.body && el !== document.documentElement && el.parentElement) {
-                                            el.style.setProperty('display', 'none', 'important');
-                                            el.style.setProperty('pointer-events', 'none', 'important');
-                                            el.style.setProperty('visibility', 'hidden', 'important');
-                                            if (document.body) {
-                                                document.body.style.removeProperty('overflow');
-                                                document.body.classList.remove('modal-open', 'no-scroll');
-                                            }
-                                        }
-                                    }
-
-                                    if (el.tagName === 'DIV' && el.parentElement === document.body && el.style) {
-                                        if (el.style.position === 'fixed' && (el.style.zIndex === '2147483647' || parseInt(el.style.zIndex, 10) > 9999) && el.style.opacity === '0') {
-                                            el.style.setProperty('display', 'none', 'important');
-                                            el.remove();
-                                        }
-                                    }
-                                }
-                            } catch(e) {}
-                        }
-
-                        const observer = new MutationObserver(() => cleanAnnoyances());
-                        if (document.documentElement) {
-                            observer.observe(document.documentElement, { childList: true, subtree: true });
-                        } else {
-                            document.addEventListener('DOMContentLoaded', () => {
-                                if (document.documentElement) observer.observe(document.documentElement, { childList: true, subtree: true });
-                            }, { once: true });
-                        }
-                        setTimeout(cleanAnnoyances, 200);
-                        setTimeout(cleanAnnoyances, 600);
-                        setTimeout(cleanAnnoyances, 1200);
                     }
 
                     // 4. Video Ad Auto-Skipper & Fast-Forward (YouTube)

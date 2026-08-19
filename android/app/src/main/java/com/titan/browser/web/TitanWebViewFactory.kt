@@ -41,23 +41,28 @@ object TitanWebViewFactory {
             settings.userAgentString = null // Default mobile UA
         }
 
-        // Dark mode support via AndroidX Webkit
-        if (isDarkTheme) {
-            webView.setBackgroundColor(android.graphics.Color.parseColor("#0F1015"))
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-                WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true)
-            } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
-                @Suppress("DEPRECATION")
-                WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_ON)
-            }
-        } else {
-            webView.setBackgroundColor(android.graphics.Color.WHITE)
+        // Web Theme and Dark Mode Settings
+        // Use standard Web Theme support so sites like Speedometer, GitHub, Wikipedia render correctly
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK_STRATEGY)) {
+            WebSettingsCompat.setForceDarkStrategy(
+                settings,
+                WebSettingsCompat.DARK_STRATEGY_PREFER_WEB_THEME_OVER_USER_AGENT_DARKENING
+            )
+        }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+            @Suppress("DEPRECATION")
+            WebSettingsCompat.setForceDark(
+                settings,
+                if (isDarkTheme) WebSettingsCompat.FORCE_DARK_AUTO else WebSettingsCompat.FORCE_DARK_OFF
+            )
+        }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, false)
         }
     }
 
     fun createWebView(context: Context): WebView {
         return WebView(context).apply {
-            setBackgroundColor(android.graphics.Color.parseColor("#0F1015"))
             configureSettings(this)
         }
     }

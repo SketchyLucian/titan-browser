@@ -82,9 +82,7 @@ fun BrowserScreen(
             .background(TitanBackground)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
+            modifier = Modifier.fillMaxSize()
         ) {
             // Find in page bar (if active)
             if (isFindInPageVisible) {
@@ -124,6 +122,10 @@ fun BrowserScreen(
                             AndroidView(
                                 factory = {
                                     (webView.parent as? ViewGroup)?.removeView(webView)
+                                    webView.layoutParams = ViewGroup.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
                                     webView
                                 },
                                 update = { view ->
@@ -137,6 +139,7 @@ fun BrowserScreen(
                     }
                 }
             }
+
 
             // Firefox Android Style Bottom Search & Navigation Bar
             BottomToolbar(

@@ -97,7 +97,6 @@ fun BottomToolbar(
             .fillMaxWidth()
             .background(TitanSurface)
             .border(width = 0.5.dp, color = TitanBorder)
-            .navigationBarsPadding()
     ) {
         // Slim Loading Progress Indicator (directly above the Firefox bar)
         AnimatedVisibility(
