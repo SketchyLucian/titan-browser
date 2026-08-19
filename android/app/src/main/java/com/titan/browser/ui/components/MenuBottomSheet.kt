@@ -1,6 +1,7 @@
 package com.titan.browser.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,15 +12,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.FindInPage
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarOutline
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -28,6 +36,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,11 +47,20 @@ import com.titan.browser.ui.theme.TitanSurface
 import com.titan.browser.ui.theme.TitanSurfaceVariant
 import com.titan.browser.ui.theme.TitanTextPrimary
 import com.titan.browser.ui.theme.TitanTextSecondary
+import com.titan.browser.ui.theme.TitanTextTertiary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MenuBottomSheet(
+    canGoBack: Boolean,
+    canGoForward: Boolean,
+    isBookmarked: Boolean,
     isDesktopMode: Boolean,
+    onBack: () -> Unit,
+    onForward: () -> Unit,
+    onHome: () -> Unit,
+    onToggleBookmark: () -> Unit,
+    onReload: () -> Unit,
     onNewTab: () -> Unit,
     onOpenBookmarks: () -> Unit,
     onFindInPage: () -> Unit,
@@ -57,13 +75,100 @@ fun MenuBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = TitanSurface,
-        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp)
+                .padding(vertical = 4.dp)
         ) {
+            // Firefox Style Quick Action Row at the Top of Menu
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Back
+                IconButton(
+                    onClick = {
+                        onBack()
+                        onDismiss()
+                    },
+                    enabled = canGoBack
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = if (canGoBack) TitanTextPrimary else TitanTextTertiary
+                    )
+                }
+
+                // Forward
+                IconButton(
+                    onClick = {
+                        onForward()
+                        onDismiss()
+                    },
+                    enabled = canGoForward
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Forward",
+                        tint = if (canGoForward) TitanTextPrimary else TitanTextTertiary
+                    )
+                }
+
+                // Reload
+                IconButton(
+                    onClick = {
+                        onReload()
+                        onDismiss()
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Reload",
+                        tint = TitanTextPrimary
+                    )
+                }
+
+                // Bookmark
+                IconButton(
+                    onClick = {
+                        onToggleBookmark()
+                        onDismiss()
+                    }
+                ) {
+                    Icon(
+                        imageVector = if (isBookmarked) Icons.Default.Star else Icons.Default.StarOutline,
+                        contentDescription = "Bookmark",
+                        tint = if (isBookmarked) Color(0xFFFFB800) else TitanTextPrimary
+                    )
+                }
+
+                // Home
+                IconButton(
+                    onClick = {
+                        onHome()
+                        onDismiss()
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Home,
+                        contentDescription = "Home",
+                        tint = TitanTextPrimary
+                    )
+                }
+            }
+
+            HorizontalDivider(
+                color = TitanBorder,
+                thickness = 0.5.dp,
+                modifier = Modifier.padding(vertical = 6.dp)
+            )
+
             MenuItem(
                 icon = Icons.Default.Add,
                 title = "New tab",

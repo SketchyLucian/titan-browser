@@ -81,22 +81,11 @@ fun BrowserScreen(
             .fillMaxSize()
             .background(TitanBackground)
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Omnibar Top Bar
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-            ) {
-                Omnibar(
-                    currentUrl = activeTab?.url ?: "titan://newtab",
-                    isLoading = activeTab?.isLoading ?: false,
-                    progress = activeTab?.progress ?: 0,
-                    onNavigate = { viewModel.navigate(it) },
-                    onReloadOrStop = { viewModel.reload() }
-                )
-            }
-
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+        ) {
             // Find in page bar (if active)
             if (isFindInPageVisible) {
                 FindInPageBar(
@@ -149,20 +138,19 @@ fun BrowserScreen(
                 }
             }
 
-            // Bottom Navigation Toolbar
+            // Firefox Android Style Bottom Search & Navigation Bar
             BottomToolbar(
-                canGoBack = activeTab?.canGoBack ?: false,
-                canGoForward = activeTab?.canGoForward ?: false,
+                currentUrl = activeTab?.url ?: "titan://newtab",
+                isLoading = activeTab?.isLoading ?: false,
+                progress = activeTab?.progress ?: 0,
                 tabCount = tabs.size,
-                isBookmarked = viewModel.isCurrentPageBookmarked(),
-                onBack = { viewModel.goBack() },
-                onForward = { viewModel.goForward() },
-                onHome = { viewModel.navigate("titan://newtab") },
-                onToggleBookmark = { viewModel.toggleBookmarkCurrentPage() },
+                onNavigate = { viewModel.navigate(it) },
+                onReloadOrStop = { viewModel.reload() },
                 onTabsClick = { viewModel.setTabGridVisible(true) },
                 onMenuClick = { viewModel.setMenuVisible(true) }
             )
         }
+
 
 
         // Tab Grid Switcher Screen
@@ -216,10 +204,18 @@ fun BrowserScreen(
             )
         }
 
-        // Menu BottomSheet
+        // Menu BottomSheet (Firefox style with top quick actions)
         if (isMenuVisible) {
             MenuBottomSheet(
+                canGoBack = activeTab?.canGoBack ?: false,
+                canGoForward = activeTab?.canGoForward ?: false,
+                isBookmarked = viewModel.isCurrentPageBookmarked(),
                 isDesktopMode = activeTab?.isDesktopMode ?: false,
+                onBack = { viewModel.goBack() },
+                onForward = { viewModel.goForward() },
+                onHome = { viewModel.navigate("titan://newtab") },
+                onToggleBookmark = { viewModel.toggleBookmarkCurrentPage() },
+                onReload = { viewModel.reload() },
                 onNewTab = { viewModel.openNewTab() },
                 onOpenBookmarks = { viewModel.setBookmarksVisible(true) },
                 onFindInPage = { viewModel.setFindInPageVisible(true) },
@@ -238,6 +234,7 @@ fun BrowserScreen(
                 onDismiss = { viewModel.setMenuVisible(false) }
             )
         }
+
 
         // Fullscreen YouTube / HTML5 Video Overlay Container
         fullscreenView?.let { customView ->
