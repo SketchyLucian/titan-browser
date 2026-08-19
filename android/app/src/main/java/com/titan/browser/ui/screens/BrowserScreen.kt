@@ -181,8 +181,14 @@ fun BrowserScreen(
                 settings = settings,
                 onUpdateSearchEngine = { viewModel.updateSearchEngine(it) },
                 onToggleDarkTheme = { viewModel.setDarkTheme(it) },
+                onToggleAdblock = { viewModel.toggleAdblock(it) },
+                onToggleBlockVideoAds = { viewModel.toggleBlockVideoAds(it) },
+                onToggleCosmeticFiltering = { viewModel.toggleCosmeticFiltering(it) },
+                onToggleBlockPopups = { viewModel.toggleBlockPopups(it) },
+                onToggleStripTrackingParameters = { viewModel.toggleStripTrackingParameters(it) },
                 onClose = { viewModel.setSettingsVisible(false) }
             )
+
         }
 
         // Bookmarks BottomSheet

@@ -68,4 +68,38 @@ object UrlUtils {
     fun isSecure(url: String): Boolean {
         return url.startsWith("https://")
     }
+
+    private val TRACKING_PARAMS = setOf(
+        "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+        "fbclid", "gclid", "gclsrc", "dclid", "zanpid", "msclkid", "mc_eid",
+        "yclid", "_hsenc", "_hsmi", "wickedid", "twclid", "igshid", "si"
+    )
+
+    /**
+     * Strips invasive tracking, analytics, and affiliate query parameters from a URL.
+     */
+    fun stripTrackingParameters(url: String): String {
+        if (!url.contains("?")) return url
+        return try {
+            val uri = android.net.Uri.parse(url)
+            val queryNames = uri.queryParameterNames
+            if (queryNames.isEmpty()) return url
+
+            val cleanBuilder = uri.buildUpon().clearQuery()
+            var hasRetainedParams = false
+
+            for (param in queryNames) {
+                if (param.lowercase() !in TRACKING_PARAMS && !param.lowercase().startsWith("utm_")) {
+                    for (value in uri.getQueryParameters(param)) {
+                        cleanBuilder.appendQueryParameter(param, value)
+                        hasRetainedParams = true
+                    }
+                }
+            }
+            cleanBuilder.build().toString()
+        } catch (_: Exception) {
+            url
+        }
+    }
 }
+

@@ -78,10 +78,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun openNewTab(url: String = "https://www.youtube.com") {
-        val normalizedUrl = UrlUtils.normalizeOrSearch(
+        var normalizedUrl = UrlUtils.normalizeOrSearch(
             url,
             SearchEngine.fromName(_settings.value.searchEngine)
         )
+        if (_settings.value.stripTrackingParameters) {
+            normalizedUrl = UrlUtils.stripTrackingParameters(normalizedUrl)
+        }
         val newTab = createTabInstance(normalizedUrl)
 
         _tabs.update { it + newTab }
@@ -122,6 +125,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         webView.webViewClient = TitanWebViewClient(
             context = context,
+            settingsProvider = { _settings.value },
             onPageStartedCallback = { pageUrl ->
                 updateTab(tabId) { it.copy(url = pageUrl, isLoading = true) }
             },
@@ -174,10 +178,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun navigate(rawInput: String) {
         val active = getActiveTab() ?: return
-        val url = UrlUtils.normalizeOrSearch(
+        var url = UrlUtils.normalizeOrSearch(
             rawInput,
             SearchEngine.fromName(_settings.value.searchEngine)
         )
+        if (_settings.value.stripTrackingParameters) {
+            url = UrlUtils.stripTrackingParameters(url)
+        }
         active.webView?.loadUrl(url)
     }
 
@@ -255,6 +262,37 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _settings.value = newSettings
         storageManager.saveSettings(newSettings)
     }
+
+    fun toggleAdblock(enabled: Boolean) {
+        val newSettings = _settings.value.copy(adblockEnabled = enabled)
+        _settings.value = newSettings
+        storageManager.saveSettings(newSettings)
+    }
+
+    fun toggleBlockVideoAds(enabled: Boolean) {
+        val newSettings = _settings.value.copy(blockVideoAds = enabled)
+        _settings.value = newSettings
+        storageManager.saveSettings(newSettings)
+    }
+
+    fun toggleCosmeticFiltering(enabled: Boolean) {
+        val newSettings = _settings.value.copy(cosmeticFiltering = enabled)
+        _settings.value = newSettings
+        storageManager.saveSettings(newSettings)
+    }
+
+    fun toggleBlockPopups(enabled: Boolean) {
+        val newSettings = _settings.value.copy(blockPopups = enabled)
+        _settings.value = newSettings
+        storageManager.saveSettings(newSettings)
+    }
+
+    fun toggleStripTrackingParameters(enabled: Boolean) {
+        val newSettings = _settings.value.copy(stripTrackingParameters = enabled)
+        _settings.value = newSettings
+        storageManager.saveSettings(newSettings)
+    }
+
 
     fun hideFullscreenVideo() {
         _customFullscreenView.value = null

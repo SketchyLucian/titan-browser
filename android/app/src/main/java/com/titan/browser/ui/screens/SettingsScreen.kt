@@ -25,7 +25,9 @@ import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -62,6 +64,11 @@ fun SettingsScreen(
     settings: BrowserSettings,
     onUpdateSearchEngine: (String) -> Unit,
     onToggleDarkTheme: (Boolean) -> Unit,
+    onToggleAdblock: (Boolean) -> Unit,
+    onToggleBlockVideoAds: (Boolean) -> Unit,
+    onToggleCosmeticFiltering: (Boolean) -> Unit,
+    onToggleBlockPopups: (Boolean) -> Unit,
+    onToggleStripTrackingParameters: (Boolean) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -107,6 +114,192 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
+            // Section: Shields & Adblock
+            Text(
+                text = "SHIELDS & ADBLOCK",
+                color = TitanPrimary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+
+            // Global AdBlocker Toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Security,
+                    contentDescription = null,
+                    tint = TitanPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Titan Shield (AdBlock)",
+                        color = TitanTextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Block ads, trackers, popunders, and fake robot modals",
+                        color = TitanTextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = settings.adblockEnabled,
+                    onCheckedChange = { onToggleAdblock(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = TitanPrimary,
+                        checkedTrackColor = TitanSurfaceVariant,
+                        uncheckedTrackColor = TitanBorder
+                    )
+                )
+            }
+
+            // Block Video Ads Toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(modifier = Modifier.width(40.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Block Video Ads",
+                        color = TitanTextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Auto-skip and fast-forward YouTube pre-roll ads",
+                        color = TitanTextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = settings.blockVideoAds,
+                    enabled = settings.adblockEnabled,
+                    onCheckedChange = { onToggleBlockVideoAds(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = TitanPrimary,
+                        checkedTrackColor = TitanSurfaceVariant,
+                        uncheckedTrackColor = TitanBorder
+                    )
+                )
+            }
+
+            // Cosmetic Element Hiding Toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(modifier = Modifier.width(40.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Cosmetic Element Hiding",
+                        color = TitanTextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Hide floating social bars, scam overlays & blank boxes",
+                        color = TitanTextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = settings.cosmeticFiltering,
+                    enabled = settings.adblockEnabled,
+                    onCheckedChange = { onToggleCosmeticFiltering(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = TitanPrimary,
+                        checkedTrackColor = TitanSurfaceVariant,
+                        uncheckedTrackColor = TitanBorder
+                    )
+                )
+            }
+
+            // Block Popups Toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(modifier = Modifier.width(40.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Block Pop-ups & Redirects",
+                        color = TitanTextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Prevent unrequested popunder window opens",
+                        color = TitanTextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = settings.blockPopups,
+                    enabled = settings.adblockEnabled,
+                    onCheckedChange = { onToggleBlockPopups(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = TitanPrimary,
+                        checkedTrackColor = TitanSurfaceVariant,
+                        uncheckedTrackColor = TitanBorder
+                    )
+                )
+            }
+
+            // Strip Tracking Parameters Toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = TitanPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Strip Tracking Parameters",
+                        color = TitanTextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Remove utm_*, fbclid, gclid tracking tags from URLs",
+                        color = TitanTextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = settings.stripTrackingParameters,
+                    onCheckedChange = { onToggleStripTrackingParameters(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = TitanPrimary,
+                        checkedTrackColor = TitanSurfaceVariant,
+                        uncheckedTrackColor = TitanBorder
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // Section: Search & Browsing
             Text(
                 text = "GENERAL",
@@ -182,7 +375,7 @@ fun SettingsScreen(
 
             // Section: Privacy & Data
             Text(
-                text = "PRIVACY & STORAGE",
+                text = "STORAGE",
                 color = TitanPrimary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
@@ -224,6 +417,7 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
 
             // Section: About
             Text(
