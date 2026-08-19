@@ -43,6 +43,13 @@ interface BrowserSettings {
   telemetry_disabled?: boolean;
   blocked_domains?: string[];
   whitelisted_domains?: string[];
+  adblock_enabled?: boolean;
+  adblock_block_video_ads?: boolean;
+  adblock_cosmetic_filtering?: boolean;
+  adblock_block_popups?: boolean;
+  adblock_aggressive_mode?: boolean;
+  adblock_blocked_domains?: string[];
+  adblock_whitelisted_domains?: string[];
 }
 
 interface BrowserState {
@@ -56,11 +63,13 @@ interface BrowserState {
   searchEngine?: string;
   is_maximized?: boolean;
   blocked_logs?: BlockedRequestLog[];
+  adblock_logs?: BlockedRequestLog[];
 }
 
 interface SettingsInitState extends Partial<BrowserState> {
   active_section?: string;
   blocked_logs?: BlockedRequestLog[];
+  adblock_logs?: BlockedRequestLog[];
 }
 
 type IpcOutMessage =
@@ -82,16 +91,25 @@ type IpcOutMessage =
   | { type: 'SetSearchEngine'; engine: string }
   | { type: 'SetShowBookmarksBar'; show: boolean }
   | { type: 'SetPrivacySetting'; key: string; enabled: boolean }
+  | { type: 'SetAdblockSetting'; key: string; enabled: boolean }
   | { type: 'ClearBrowsingData'; cookies: boolean; cache: boolean; local_storage: boolean }
   | { type: 'AddBlockedDomain'; domain: string }
   | { type: 'RemoveBlockedDomain'; domain: string }
   | { type: 'AddWhitelistedDomain'; domain: string }
   | { type: 'RemoveWhitelistedDomain'; domain: string }
   | { type: 'ResetPrivacyRules' }
+  | { type: 'AddAdblockDomain'; domain: string }
+  | { type: 'RemoveAdblockDomain'; domain: string }
+  | { type: 'AddAdblockWhitelist'; domain: string }
+  | { type: 'RemoveAdblockWhitelist'; domain: string }
+  | { type: 'ResetAdblockRules' }
+  | { type: 'ClearAdblockLogs' }
   | { type: 'ReportBlockedRequest'; domain: string; url: string; req_type: string }
+  | { type: 'ReportBlockedAd'; domain: string; url: string; req_type: string }
   | { type: 'OpenThemes' }
   | { type: 'OpenSettings' }
   | { type: 'OpenPrivacy' }
+  | { type: 'OpenAdblock' }
   | { type: 'ShowBookmarkContextMenu'; url: string }
   | { type: 'TabStateUpdate'; tab_id: number; url: string; title: string; can_go_back: boolean; can_go_forward: boolean }
   | { type: 'DragWindow' }
@@ -114,6 +132,7 @@ interface Window {
   selectAccent?: (color: string) => void;
   toggleDarkReader?: (enabled: boolean) => void;
   setPrivacySetting?: (key: string, enabled: boolean) => void;
+  setAdblockSetting?: (key: string, enabled: boolean) => void;
   clearBrowsingData?: () => void;
   addBlockedDomain?: () => void;
   removeBlockedDomain?: (domain: string) => void;
@@ -121,4 +140,11 @@ interface Window {
   removeWhitelistedDomain?: (domain: string) => void;
   resetPrivacyRules?: () => void;
   filterBlockedRules?: (query: string) => void;
+  addAdblockDomain?: () => void;
+  removeAdblockDomain?: (domain: string) => void;
+  addAdblockWhitelist?: () => void;
+  removeAdblockWhitelist?: (domain: string) => void;
+  resetAdblockRules?: () => void;
+  clearAdblockLogs?: () => void;
+  filterAdblockRules?: (query: string) => void;
 }

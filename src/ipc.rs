@@ -58,6 +58,20 @@ pub struct BrowserSettings {
     pub blocked_domains: Vec<String>,
     #[serde(default)]
     pub whitelisted_domains: Vec<String>,
+    #[serde(default = "default_true")]
+    pub adblock_enabled: bool,
+    #[serde(default = "default_true")]
+    pub adblock_block_video_ads: bool,
+    #[serde(default = "default_true")]
+    pub adblock_cosmetic_filtering: bool,
+    #[serde(default = "default_true")]
+    pub adblock_block_popups: bool,
+    #[serde(default)]
+    pub adblock_aggressive_mode: bool,
+    #[serde(default = "default_adblock_domains")]
+    pub adblock_blocked_domains: Vec<String>,
+    #[serde(default)]
+    pub adblock_whitelisted_domains: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -95,6 +109,53 @@ pub fn default_blocked_domains() -> Vec<String> {
     ]
 }
 
+pub fn default_adblock_domains() -> Vec<String> {
+    vec![
+        "doubleclick.net".into(),
+        "googleadservices.com".into(),
+        "googlesyndication.com".into(),
+        "adservice.google.com".into(),
+        "pagead2.googlesyndication.com".into(),
+        "adnxs.com".into(),
+        "advertising.com".into(),
+        "rubiconproject.com".into(),
+        "pubmatic.com".into(),
+        "criteo.com".into(),
+        "outbrain.com".into(),
+        "taboola.com".into(),
+        "popads.net".into(),
+        "popcash.net".into(),
+        "propellerads.com".into(),
+        "adcash.com".into(),
+        "bidswitch.net".into(),
+        "casalemedia.com".into(),
+        "openx.net".into(),
+        "smartadserver.com".into(),
+        "zedo.com".into(),
+        "amazon-adsystem.com".into(),
+        "adroll.com".into(),
+        "media.net".into(),
+        "moatads.com".into(),
+        "quantserve.com".into(),
+        "scorecardresearch.com".into(),
+        "adform.net".into(),
+        "ads-twitter.com".into(),
+        "revcontent.com".into(),
+        "mgid.com".into(),
+        "inmobi.com".into(),
+        "flashtalking.com".into(),
+        "exponential.com".into(),
+        "adcolony.com".into(),
+        "unityads.unity3d.com".into(),
+        "applovin.com".into(),
+        "vungle.com".into(),
+        "ironsrc.com".into(),
+        "chartboost.com".into(),
+        "adservice.com".into(),
+        "adserver.com".into(),
+    ]
+}
+
 impl Default for BrowserSettings {
     fn default() -> Self {
         Self {
@@ -111,6 +172,13 @@ impl Default for BrowserSettings {
             telemetry_disabled: true,
             blocked_domains: default_blocked_domains(),
             whitelisted_domains: vec![],
+            adblock_enabled: true,
+            adblock_block_video_ads: true,
+            adblock_cosmetic_filtering: true,
+            adblock_block_popups: true,
+            adblock_aggressive_mode: false,
+            adblock_blocked_domains: default_adblock_domains(),
+            adblock_whitelisted_domains: vec![],
         }
     }
 }
@@ -126,6 +194,7 @@ pub struct IpcBrowserState {
     pub search_engine: String,
     pub is_maximized: bool,
     pub blocked_logs: Vec<BlockedRequestLog>,
+    pub adblock_logs: Vec<BlockedRequestLog>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -181,6 +250,10 @@ pub enum IpcIncoming {
         key: String,
         enabled: bool,
     },
+    SetAdblockSetting {
+        key: String,
+        enabled: bool,
+    },
     ClearBrowsingData {
         cookies: bool,
         cache: bool,
@@ -199,7 +272,26 @@ pub enum IpcIncoming {
         domain: String,
     },
     ResetPrivacyRules,
+    AddAdblockDomain {
+        domain: String,
+    },
+    RemoveAdblockDomain {
+        domain: String,
+    },
+    AddAdblockWhitelist {
+        domain: String,
+    },
+    RemoveAdblockWhitelist {
+        domain: String,
+    },
+    ResetAdblockRules,
+    ClearAdblockLogs,
     ReportBlockedRequest {
+        domain: String,
+        url: String,
+        req_type: String,
+    },
+    ReportBlockedAd {
         domain: String,
         url: String,
         req_type: String,
@@ -207,6 +299,7 @@ pub enum IpcIncoming {
     OpenSettings,
     OpenThemes,
     OpenPrivacy,
+    OpenAdblock,
     TabStateUpdate {
         tab_id: Option<u32>,
         url: String,
@@ -218,4 +311,35 @@ pub enum IpcIncoming {
     MinimizeWindow,
     ToggleMaximizeWindow,
     CloseWindow,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_adblock_default_settings() {
+        let settings = BrowserSettings::default();
+        assert!(settings.adblock_enabled);
+        assert!(settings.adblock_block_video_ads);
+        assert!(settings.adblock_cosmetic_filtering);
+        assert!(settings.adblock_block_popups);
+        assert!(!settings.adblock_aggressive_mode);
+        assert!(!settings.adblock_blocked_domains.is_empty());
+        assert!(settings.adblock_blocked_domains.contains(&"doubleclick.net".to_string()));
+        assert!(settings.adblock_blocked_domains.contains(&"pagead2.googlesyndication.com".to_string()));
+    }
+
+    #[test]
+    fn test_adblock_ipc_serialization() {
+        let json_str = r#"{"type":"SetAdblockSetting","key":"adblock_enabled","enabled":false}"#;
+        let incoming: Result<IpcIncoming, _> = serde_json::from_str(json_str);
+        assert!(incoming.is_ok());
+        if let Ok(IpcIncoming::SetAdblockSetting { key, enabled }) = incoming {
+            assert_eq!(key, "adblock_enabled");
+            assert!(!enabled);
+        } else {
+            panic!("Failed to parse SetAdblockSetting");
+        }
+    }
 }

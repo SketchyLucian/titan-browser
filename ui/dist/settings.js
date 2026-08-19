@@ -12,35 +12,45 @@
     function switchView(tabName) {
         const isThemes = tabName === 'themes';
         const isPrivacy = tabName === 'privacy';
-        const isGeneral = !isThemes && !isPrivacy;
+        const isAdblock = tabName === 'adblock';
+        const isGeneral = !isThemes && !isPrivacy && !isAdblock;
         const viewGeneral = document.getElementById('viewGeneral');
         const viewThemes = document.getElementById('viewThemes');
         const viewPrivacy = document.getElementById('viewPrivacy');
+        const viewAdblock = document.getElementById('viewAdblock');
         const tabBtnGeneral = document.getElementById('tabBtnGeneral');
         const tabBtnThemes = document.getElementById('tabBtnThemes');
         const tabBtnPrivacy = document.getElementById('tabBtnPrivacy');
+        const tabBtnAdblock = document.getElementById('tabBtnAdblock');
         const headerTitle = document.getElementById('headerTitle');
         const headerSubtitle = document.getElementById('headerSubtitle');
         const headerIconGeneral = document.getElementById('headerIconGeneral');
         const headerIconThemes = document.getElementById('headerIconThemes');
         const headerIconPrivacy = document.getElementById('headerIconPrivacy');
+        const headerIconAdblock = document.getElementById('headerIconAdblock');
         if (viewGeneral)
             viewGeneral.classList.toggle('active', isGeneral);
         if (viewThemes)
             viewThemes.classList.toggle('active', isThemes);
         if (viewPrivacy)
             viewPrivacy.classList.toggle('active', isPrivacy);
+        if (viewAdblock)
+            viewAdblock.classList.toggle('active', isAdblock);
         if (tabBtnGeneral)
             tabBtnGeneral.classList.toggle('active', isGeneral);
         if (tabBtnThemes)
             tabBtnThemes.classList.toggle('active', isThemes);
         if (tabBtnPrivacy)
             tabBtnPrivacy.classList.toggle('active', isPrivacy);
+        if (tabBtnAdblock)
+            tabBtnAdblock.classList.toggle('active', isAdblock);
         if (headerTitle) {
             if (isThemes)
                 headerTitle.textContent = 'Themes & Appearance';
             else if (isPrivacy)
                 headerTitle.textContent = 'Privacy & Security';
+            else if (isAdblock)
+                headerTitle.textContent = 'AdBlock & Shields';
             else
                 headerTitle.textContent = 'Settings';
         }
@@ -50,6 +60,9 @@
             }
             else if (isPrivacy) {
                 headerSubtitle.textContent = 'Zero-telemetry controls, anti-fingerprinting shields, and tracking protection';
+            }
+            else if (isAdblock) {
+                headerSubtitle.textContent = 'Shield controls, video ad auto-skip, popup defense, and custom domain filters';
             }
             else {
                 headerSubtitle.textContent = 'Manage browser preferences, search, and system settings';
@@ -61,6 +74,8 @@
             headerIconThemes.style.display = isThemes ? 'block' : 'none';
         if (headerIconPrivacy)
             headerIconPrivacy.style.display = isPrivacy ? 'block' : 'none';
+        if (headerIconAdblock)
+            headerIconAdblock.style.display = isAdblock ? 'block' : 'none';
     }
     function selectTheme(themeId) {
         document.querySelectorAll('.theme-card').forEach((c) => {
@@ -93,6 +108,13 @@
     function setPrivacySetting(key, enabled) {
         sendIpc({
             type: 'SetPrivacySetting',
+            key: key,
+            enabled: enabled,
+        });
+    }
+    function setAdblockSetting(key, enabled) {
+        sendIpc({
+            type: 'SetAdblockSetting',
             key: key,
             enabled: enabled,
         });
@@ -160,6 +182,22 @@
             const telemetryToggle = document.getElementById('telemetryToggle');
             if (telemetryToggle)
                 telemetryToggle.checked = state.settings.telemetry_disabled !== false;
+            // AdBlock Settings
+            const adblockToggle = document.getElementById('adblockToggle');
+            if (adblockToggle)
+                adblockToggle.checked = state.settings.adblock_enabled !== false;
+            const blockVideoAdsToggle = document.getElementById('blockVideoAdsToggle');
+            if (blockVideoAdsToggle)
+                blockVideoAdsToggle.checked = state.settings.adblock_block_video_ads !== false;
+            const cosmeticFilteringToggle = document.getElementById('cosmeticFilteringToggle');
+            if (cosmeticFilteringToggle)
+                cosmeticFilteringToggle.checked = state.settings.adblock_cosmetic_filtering !== false;
+            const blockPopupsToggle = document.getElementById('blockPopupsToggle');
+            if (blockPopupsToggle)
+                blockPopupsToggle.checked = state.settings.adblock_block_popups !== false;
+            const aggressiveAdblockToggle = document.getElementById('aggressiveAdblockToggle');
+            if (aggressiveAdblockToggle)
+                aggressiveAdblockToggle.checked = !!state.settings.adblock_aggressive_mode;
         }
         if (state.modules) {
             const darkMod = state.modules.find((m) => m.id === 'dark_reader');
@@ -177,6 +215,7 @@
     window.toggleBookmarksBar = toggleBookmarksBar;
     window.toggleDarkReader = toggleDarkReader;
     window.setPrivacySetting = setPrivacySetting;
+    window.setAdblockSetting = setAdblockSetting;
     window.clearBrowsingData = clearBrowsingData;
     // DOM Event Listeners
     document.addEventListener('DOMContentLoaded', () => {
@@ -191,6 +230,10 @@
         const tabBtnPrivacy = document.getElementById('tabBtnPrivacy');
         if (tabBtnPrivacy) {
             tabBtnPrivacy.addEventListener('click', () => switchView('privacy'));
+        }
+        const tabBtnAdblock = document.getElementById('tabBtnAdblock');
+        if (tabBtnAdblock) {
+            tabBtnAdblock.addEventListener('click', () => switchView('adblock'));
         }
         document.querySelectorAll('.theme-card').forEach((card) => {
             card.addEventListener('click', () => {
@@ -246,16 +289,38 @@
                 });
             }
         });
+        // AdBlock Toggles
+        const adblockKeys = [
+            { id: 'adblockToggle', key: 'adblock_enabled' },
+            { id: 'blockVideoAdsToggle', key: 'adblock_block_video_ads' },
+            { id: 'cosmeticFilteringToggle', key: 'adblock_cosmetic_filtering' },
+            { id: 'blockPopupsToggle', key: 'adblock_block_popups' },
+            { id: 'aggressiveAdblockToggle', key: 'adblock_aggressive_mode' },
+        ];
+        adblockKeys.forEach(({ id, key }) => {
+            const toggle = document.getElementById(id);
+            if (toggle) {
+                toggle.addEventListener('change', (e) => {
+                    const target = e.target;
+                    setAdblockSetting(key, target.checked);
+                });
+            }
+        });
         const clearBtn = document.getElementById('clearBrowsingDataBtn');
         if (clearBtn) {
             clearBtn.addEventListener('click', clearBrowsingData);
         }
     });
-    // Blocklist and Whitelist Management
+    // Privacy Blocklist & Whitelist Management
     let currentBlockedDomains = [];
     let currentWhitelistedDomains = [];
     let currentBlockedLogs = [];
     let currentRuleFilter = '';
+    // AdBlock Domain Rules, Whitelist & Logs
+    let currentAdblockDomains = [];
+    let currentAdblockWhitelistedDomains = [];
+    let currentAdblockLogs = [];
+    let currentAdblockRuleFilter = '';
     function cleanDomainInput(val) {
         return val
             .trim()
@@ -386,6 +451,121 @@
         })
             .join('');
     }
+    // AdBlock Domain Rules & Whitelist Renderers
+    function renderAdblockDomainsList() {
+        const listEl = document.getElementById('adblockDomainsList');
+        const countBadge = document.getElementById('adblockRulesCount');
+        if (!listEl)
+            return;
+        const filtered = currentAdblockDomains.filter((d) => d.toLowerCase().includes(currentAdblockRuleFilter.toLowerCase()));
+        if (countBadge) {
+            countBadge.textContent = `${currentAdblockDomains.length} rules active`;
+        }
+        if (filtered.length === 0) {
+            listEl.innerHTML = `
+        <div class="rules-empty-state">
+          ${currentAdblockRuleFilter ? 'No matching ad rules found.' : 'No ad domains configured.'}
+        </div>
+      `;
+            return;
+        }
+        listEl.innerHTML = filtered
+            .map((domain) => {
+            return `
+          <div class="rule-item">
+            <div class="rule-item-left">
+              <span class="rule-cat-badge" style="background: rgba(78, 124, 246, 0.18); color: #60a5fa; border: 1px solid rgba(78, 124, 246, 0.35);">
+                Ad Server
+              </span>
+              <span class="rule-domain-text">${domain}</span>
+            </div>
+            <button class="rule-delete-btn" onclick="removeAdblockDomain('${domain}')" title="Remove rule">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        `;
+        })
+            .join('');
+    }
+    function renderAdblockWhitelistedDomainsList() {
+        const listEl = document.getElementById('adblockWhitelistDomainsList');
+        const countBadge = document.getElementById('adblockWhitelistRulesCount');
+        if (!listEl)
+            return;
+        if (countBadge) {
+            countBadge.textContent = `${currentAdblockWhitelistedDomains.length} websites`;
+        }
+        if (currentAdblockWhitelistedDomains.length === 0) {
+            listEl.innerHTML = `
+        <div class="rules-empty-state">
+          No websites whitelisted. AdBlock is active across all visited websites.
+        </div>
+      `;
+            return;
+        }
+        listEl.innerHTML = currentAdblockWhitelistedDomains
+            .map((domain) => {
+            return `
+          <div class="rule-item">
+            <div class="rule-item-left">
+              <span class="rule-cat-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">
+                Allowed
+              </span>
+              <span class="rule-domain-text">${domain}</span>
+            </div>
+            <button class="rule-delete-btn" onclick="removeAdblockWhitelist('${domain}')" title="Remove whitelist exception">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        `;
+        })
+            .join('');
+    }
+    function renderAdblockActivityLogs() {
+        const logListEl = document.getElementById('adblockActivityLogList');
+        const countBadge = document.getElementById('adblockActivityCountBadge');
+        const heroBadge = document.getElementById('adblockTotalBlockedBadge');
+        if (!logListEl)
+            return;
+        if (countBadge) {
+            countBadge.textContent = `${currentAdblockLogs.length} ads blocked`;
+        }
+        if (heroBadge) {
+            heroBadge.textContent = `${currentAdblockLogs.length} Ads Stopped`;
+        }
+        if (currentAdblockLogs.length === 0) {
+            logListEl.innerHTML = `
+        <div class="rules-empty-state">
+          No ads intercepted in this session.
+        </div>
+      `;
+            return;
+        }
+        logListEl.innerHTML = currentAdblockLogs
+            .slice(0, 30)
+            .map((log) => {
+            return `
+          <div class="log-item">
+            <div class="log-item-header">
+              <span class="log-badge-type" style="background: rgba(78, 124, 246, 0.2); color: #60a5fa; border-color: rgba(78, 124, 246, 0.35);">
+                ${log.req_type.toUpperCase()}
+              </span>
+              <span class="log-domain-match">${log.domain}</span>
+              <span class="log-timestamp">${log.timestamp}</span>
+            </div>
+            <div class="log-url-text" title="${log.url}">${log.url}</div>
+          </div>
+        `;
+        })
+            .join('');
+    }
+    // Privacy Rule Actions
     function addBlockedDomain() {
         const input = document.getElementById('newBlockedDomainInput');
         if (!input)
@@ -433,6 +613,59 @@
         currentRuleFilter = query;
         renderBlockedDomainsList();
     }
+    // AdBlock Rule Actions
+    function addAdblockDomain() {
+        const input = document.getElementById('newAdblockDomainInput');
+        if (!input)
+            return;
+        const domain = cleanDomainInput(input.value);
+        if (!domain)
+            return;
+        sendIpc({ type: 'AddAdblockDomain', domain });
+        input.value = '';
+        if (!currentAdblockDomains.includes(domain)) {
+            currentAdblockDomains.unshift(domain);
+            renderAdblockDomainsList();
+        }
+    }
+    function removeAdblockDomain(domain) {
+        sendIpc({ type: 'RemoveAdblockDomain', domain });
+        currentAdblockDomains = currentAdblockDomains.filter((d) => d !== domain);
+        renderAdblockDomainsList();
+    }
+    function addAdblockWhitelist() {
+        const input = document.getElementById('newAdblockWhitelistDomainInput');
+        if (!input)
+            return;
+        const domain = cleanDomainInput(input.value);
+        if (!domain)
+            return;
+        sendIpc({ type: 'AddAdblockWhitelist', domain });
+        input.value = '';
+        if (!currentAdblockWhitelistedDomains.includes(domain)) {
+            currentAdblockWhitelistedDomains.unshift(domain);
+            renderAdblockWhitelistedDomainsList();
+        }
+    }
+    function removeAdblockWhitelist(domain) {
+        sendIpc({ type: 'RemoveAdblockWhitelist', domain });
+        currentAdblockWhitelistedDomains = currentAdblockWhitelistedDomains.filter((d) => d !== domain);
+        renderAdblockWhitelistedDomainsList();
+    }
+    function resetAdblockRules() {
+        if (confirm('Reset all AdBlock filter rules and whitelist exceptions to Titan defaults?')) {
+            sendIpc({ type: 'ResetAdblockRules' });
+        }
+    }
+    function clearAdblockLogs() {
+        currentAdblockLogs = [];
+        renderAdblockActivityLogs();
+        sendIpc({ type: 'ClearAdblockLogs' });
+    }
+    function filterAdblockRules(query) {
+        currentAdblockRuleFilter = query;
+        renderAdblockDomainsList();
+    }
     // Update window.initSettings to populate blocklist, whitelist and activity logs
     const origInitSettings = window.initSettings;
     window.initSettings = function (state) {
@@ -447,10 +680,22 @@
                 currentWhitelistedDomains = [...state.settings.whitelisted_domains];
                 renderWhitelistedDomainsList();
             }
+            if (Array.isArray(state.settings.adblock_blocked_domains)) {
+                currentAdblockDomains = [...state.settings.adblock_blocked_domains];
+                renderAdblockDomainsList();
+            }
+            if (Array.isArray(state.settings.adblock_whitelisted_domains)) {
+                currentAdblockWhitelistedDomains = [...state.settings.adblock_whitelisted_domains];
+                renderAdblockWhitelistedDomainsList();
+            }
         }
         if (Array.isArray(state.blocked_logs)) {
             currentBlockedLogs = [...state.blocked_logs];
             renderBlockedActivityLogs();
+        }
+        if (Array.isArray(state.adblock_logs)) {
+            currentAdblockLogs = [...state.adblock_logs];
+            renderAdblockActivityLogs();
         }
     };
     window.addBlockedDomain = addBlockedDomain;
@@ -459,4 +704,11 @@
     window.removeWhitelistedDomain = removeWhitelistedDomain;
     window.resetPrivacyRules = resetPrivacyRules;
     window.filterBlockedRules = filterBlockedRules;
+    window.addAdblockDomain = addAdblockDomain;
+    window.removeAdblockDomain = removeAdblockDomain;
+    window.addAdblockWhitelist = addAdblockWhitelist;
+    window.removeAdblockWhitelist = removeAdblockWhitelist;
+    window.resetAdblockRules = resetAdblockRules;
+    window.clearAdblockLogs = clearAdblockLogs;
+    window.filterAdblockRules = filterAdblockRules;
 })();

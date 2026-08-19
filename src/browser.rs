@@ -42,6 +42,7 @@ pub struct BrowserManager {
     pub zoom: f64,
     pub window_size: (f64, f64),
     pub blocked_logs: Vec<crate::ipc::BlockedRequestLog>,
+    pub adblock_logs: Vec<crate::ipc::BlockedRequestLog>,
 }
 
 impl BrowserManager {
@@ -66,6 +67,7 @@ impl BrowserManager {
             zoom: 1.0,
             window_size: (win_size.width, win_size.height),
             blocked_logs: Vec::new(),
+            adblock_logs: Vec::new(),
         }
     }
 
@@ -131,6 +133,7 @@ impl BrowserManager {
             "settings": self.settings,
             "modules": self.modules,
             "blocked_logs": self.blocked_logs,
+            "adblock_logs": self.adblock_logs,
             "active_section": active_section,
         }))
         .unwrap_or_else(|_| "{}".into());
@@ -169,11 +172,15 @@ impl BrowserManager {
         url == "titan://settings"
             || url == "titan://themes"
             || url == "titan://privacy"
+            || url == "titan://adblock"
+            || url == "titan://shields"
             || url == "titan://modules"
             || url == "titan://darkmode"
             || url == "about:settings"
             || url == "about:themes"
             || url == "about:privacy"
+            || url == "about:adblock"
+            || url == "about:shields"
     }
 
     pub fn is_internal_url(url: &str) -> bool {
@@ -652,6 +659,247 @@ impl BrowserManager {
         )
     }
 
+    pub fn get_adblock_injection_script(&self) -> String {
+        let enabled = self.settings.adblock_enabled;
+        let block_video_ads = self.settings.adblock_block_video_ads;
+        let cosmetic_filtering = self.settings.adblock_cosmetic_filtering;
+        let block_popups = self.settings.adblock_block_popups;
+        let aggressive = self.settings.adblock_aggressive_mode;
+        let blocked_domains_json = serde_json::to_string(&self.settings.adblock_blocked_domains)
+            .unwrap_or_else(|_| "[]".into());
+        let whitelisted_domains_json = serde_json::to_string(&self.settings.adblock_whitelisted_domains)
+            .unwrap_or_else(|_| "[]".into());
+
+        format!(
+            r#"
+            (function() {{
+                try {{
+                    const enabled = {enabled};
+                    if (!enabled) return;
+
+                    const blockVideoAds = {block_video_ads};
+                    const cosmeticFiltering = {cosmetic_filtering};
+                    const blockPopups = {block_popups};
+                    const aggressive = {aggressive};
+                    const AD_BLOCKLIST = {blocked_domains_json};
+                    const AD_WHITELIST = {whitelisted_domains_json};
+
+                    const currentHost = (window.location.hostname || '').toLowerCase();
+                    const currentHref = (window.location.href || '').toLowerCase();
+
+                    // Check if current website is whitelisted
+                    if (AD_WHITELIST.some(d => d && (currentHost === d.toLowerCase() || currentHost.endsWith('.' + d.toLowerCase())))) {{
+                        return; // Ad blocking disabled for this whitelisted site
+                    }}
+
+                    // Helper to test if a request URL matches ad server domains
+                    const isAdUrl = function(u, reqType) {{
+                        if (!u) return false;
+                        const str = String(u).toLowerCase();
+                        if (AD_WHITELIST.some(d => d && str.includes(d.toLowerCase()))) return false;
+                        const match = AD_BLOCKLIST.find(d => d && str.includes(d.toLowerCase()));
+                        if (match) {{
+                            try {{
+                                window.ipc.postMessage(JSON.stringify({{
+                                    type: 'ReportBlockedAd',
+                                    domain: match,
+                                    url: str.substring(0, 120),
+                                    req_type: reqType || 'network'
+                                }}));
+                            }} catch(e) {{}}
+                            return true;
+                        }}
+                        if (aggressive) {{
+                            if (str.includes('/ads.js') || str.includes('/pagead/') || str.includes('doubleclick') || str.includes('/advertisement')) {{
+                                try {{
+                                    window.ipc.postMessage(JSON.stringify({{
+                                        type: 'ReportBlockedAd',
+                                        domain: 'heuristic-rule',
+                                        url: str.substring(0, 120),
+                                        req_type: reqType || 'heuristic'
+                                    }}));
+                                }} catch(e) {{}}
+                                return true;
+                            }}
+                        }}
+                        return false;
+                    }};
+
+                    // 1. Intercept Network Requests (fetch, xhr, beacon)
+                    if (window.fetch) {{
+                        const origFetch = window.fetch.bind(window);
+                        window.fetch = function(input, init) {{
+                            const urlStr = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+                            if (isAdUrl(urlStr, 'fetch')) {{
+                                return Promise.resolve(new Response('', {{ status: 204, statusText: 'No Content (Blocked by Titan AdBlock)' }}));
+                            }}
+                            return origFetch(input, init);
+                        }};
+                    }}
+
+                    if (window.XMLHttpRequest) {{
+                        const origOpen = XMLHttpRequest.prototype.open;
+                        const origSend = XMLHttpRequest.prototype.send;
+                        XMLHttpRequest.prototype.open = function(method, url, ...rest) {{
+                            this._titanAdBlocked = isAdUrl(url, 'xhr');
+                            if (this._titanAdBlocked) {{
+                                return origOpen.apply(this, [method, 'about:blank', ...rest]);
+                            }}
+                            return origOpen.apply(this, [method, url, ...rest]);
+                        }};
+                        XMLHttpRequest.prototype.send = function(...args) {{
+                            if (this._titanAdBlocked) {{
+                                try {{
+                                    Object.defineProperty(this, 'status', {{ get: () => 204 }});
+                                    Object.defineProperty(this, 'readyState', {{ get: () => 4 }});
+                                    Object.defineProperty(this, 'responseText', {{ get: () => '' }});
+                                    if (this.onreadystatechange) this.onreadystatechange(new Event('readystatechange'));
+                                    if (this.onload) this.onload(new ProgressEvent('load'));
+                                }} catch(e) {{}}
+                                return;
+                            }}
+                            return origSend.apply(this, args);
+                        }};
+                    }}
+
+                    if (navigator.sendBeacon) {{
+                        const origBeacon = navigator.sendBeacon.bind(navigator);
+                        navigator.sendBeacon = function(url, data) {{
+                            if (isAdUrl(url, 'beacon')) {{
+                                return true;
+                            }}
+                            return origBeacon(url, data);
+                        }};
+                    }}
+
+                    // 2. Cosmetic Element Hiding (CSS rules)
+                    if (cosmeticFiltering) {{
+                        const adCss = `
+                            ins.adsbygoogle,
+                            [id^="google_ads_"],
+                            [id*="google_ads_iframe"],
+                            [id*="ScriptRoot"],
+                            [class*="sponsored-post"],
+                            [class*="ad-container"],
+                            [class*="ad_container"],
+                            [id*="banner-ad"],
+                            [id*="ad-banner"],
+                            [class*="ad-banner"],
+                            [class*="ad-wrapper"],
+                            [id*="ad-wrapper"],
+                            [class*="ad-slot"],
+                            [id*="ad-slot"],
+                            [class*="ad-placement"],
+                            [aria-label="advertisement"],
+                            [aria-label="Sponsored"],
+                            ytd-promoted-video-renderer,
+                            ytd-promoted-sparkles-web-renderer,
+                            ytd-display-ad-renderer,
+                            ytd-statement-banner-renderer,
+                            ytd-in-feed-ad-layout-renderer,
+                            ytd-banner-promo-renderer,
+                            #masthead-ad,
+                            #player-ads,
+                            #offer-module,
+                            .ytp-ad-overlay-container,
+                            .ytp-ad-message-container,
+                            .ytp-ad-overlay-slot,
+                            .ytp-ad-action-interstitial,
+                            .video-ads,
+                            .ytp-ad-module {{
+                                display: none !important;
+                                visibility: hidden !important;
+                                height: 0 !important;
+                                min-height: 0 !important;
+                                max-height: 0 !important;
+                                width: 0 !important;
+                                opacity: 0 !important;
+                                pointer-events: none !important;
+                                overflow: hidden !important;
+                            }}
+                        `;
+
+                        function injectAdStyle() {{
+                            if (document.getElementById('titan-adblock-style')) return;
+                            const style = document.createElement('style');
+                            style.id = 'titan-adblock-style';
+                            style.textContent = adCss;
+                            (document.head || document.documentElement).appendChild(style);
+                        }}
+
+                        injectAdStyle();
+                        if (document.readyState === 'loading') {{
+                            document.addEventListener('DOMContentLoaded', injectAdStyle, {{ once: true }});
+                        }}
+                    }}
+
+                    // 3. Video Ad Auto-Skipper & Fast-Forward (YouTube, HTML5 Video)
+                    if (blockVideoAds) {{
+                        function handleVideoAds() {{
+                            try {{
+                                // Skip / close buttons
+                                const skipSelectors = [
+                                    '.ytp-ad-skip-button',
+                                    '.ytp-ad-skip-button-modern',
+                                    '.ytp-skip-ad-button',
+                                    '.ytp-ad-skip-button-slot',
+                                    '.ytp-ad-overlay-close-button',
+                                    '.videoAdUiSkipButton',
+                                    '[id^="skip-button"]',
+                                    '.ytp-ad-text.ytp-ad-preview-text'
+                                ];
+
+                                for (const sel of skipSelectors) {{
+                                    const btn = document.querySelector(sel);
+                                    if (btn) {{
+                                        btn.click();
+                                    }}
+                                }}
+
+                                // Check video players currently showing ads
+                                const adElements = document.querySelectorAll('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
+                                if (adElements.length > 0) {{
+                                    const videos = document.querySelectorAll('video');
+                                    videos.forEach(v => {{
+                                        if (v && !isNaN(v.duration) && v.duration > 0) {{
+                                            v.muted = true;
+                                            v.playbackRate = 16.0;
+                                            v.currentTime = v.duration;
+                                        }}
+                                    }});
+                                }}
+                            }} catch(e) {{}}
+                        }}
+
+                        setInterval(handleVideoAds, 350);
+                    }}
+
+                    // 4. Pop-up Interceptor
+                    if (blockPopups) {{
+                        const origWindowOpen = window.open;
+                        window.open = function(url, target, features) {{
+                            if (url && isAdUrl(url, 'popup')) {{
+                                return null;
+                            }}
+                            if (url && (url.includes('popads') || url.includes('popcash') || url.includes('propellerads') || url.includes('adcash'))) {{
+                                return null;
+                            }}
+                            return origWindowOpen.call(window, url, target, features);
+                        }};
+                    }}
+                }} catch(e) {{}}
+            }})();
+            "#,
+            enabled = enabled,
+            block_video_ads = block_video_ads,
+            cosmetic_filtering = cosmetic_filtering,
+            block_popups = block_popups,
+            aggressive = aggressive,
+            blocked_domains_json = blocked_domains_json,
+            whitelisted_domains_json = whitelisted_domains_json,
+        )
+    }
+
     pub fn update_all_tabs_theme(&self) {
         let script = self.get_theme_injection_script();
         for tab in &self.tabs {
@@ -669,6 +917,10 @@ impl BrowserManager {
         let is_settings = Self::is_settings_url(target_url);
         let is_themes = target_url == "titan://themes" || target_url == "about:themes";
         let is_privacy = target_url == "titan://privacy" || target_url == "about:privacy";
+        let is_adblock = target_url == "titan://adblock"
+            || target_url == "about:adblock"
+            || target_url == "titan://shields"
+            || target_url == "about:shields";
 
         let normalized_url = if is_newtab {
             "titan://newtab".to_string()
@@ -696,6 +948,11 @@ impl BrowserManager {
             "".to_string()
         } else {
             self.get_privacy_injection_script()
+        };
+        let adblock_script = if is_internal {
+            "".to_string()
+        } else {
+            self.get_adblock_injection_script()
         };
 
         let init_script = format!(
@@ -735,11 +992,13 @@ impl BrowserManager {
 
                 {theme_script}
                 {privacy_script}
+                {adblock_script}
             }})();
             "#,
             tab_id = tab_id,
             theme_script = theme_script,
             privacy_script = privacy_script,
+            adblock_script = adblock_script,
         );
 
         let content_bounds = self.get_content_bounds();
@@ -780,6 +1039,8 @@ impl BrowserManager {
                 "themes"
             } else if is_privacy {
                 "privacy"
+            } else if is_adblock {
+                "adblock"
             } else {
                 "general"
             };
@@ -802,6 +1063,8 @@ impl BrowserManager {
             "Themes".to_string()
         } else if is_privacy {
             "Privacy & Security".to_string()
+        } else if is_adblock {
+            "AdBlock & Shields".to_string()
         } else if is_settings {
             "Settings".to_string()
         } else if normalized_url.contains("youtube.com") {
@@ -892,10 +1155,16 @@ impl BrowserManager {
         if Self::is_settings_url(input) {
             let is_themes = input == "titan://themes" || input == "about:themes";
             let is_privacy = input == "titan://privacy" || input == "about:privacy";
+            let is_adblock = input == "titan://adblock"
+                || input == "about:adblock"
+                || input == "titan://shields"
+                || input == "about:shields";
             let section = if is_themes {
                 "themes"
             } else if is_privacy {
                 "privacy"
+            } else if is_adblock {
+                "adblock"
             } else {
                 "general"
             };
@@ -907,6 +1176,8 @@ impl BrowserManager {
                         "Themes".into()
                     } else if is_privacy {
                         "Privacy & Security".into()
+                    } else if is_adblock {
+                        "AdBlock & Shields".into()
                     } else {
                         "Settings".into()
                     };
@@ -1023,6 +1294,7 @@ impl BrowserManager {
             "settings": self.settings,
             "modules": self.modules,
             "blocked_logs": self.blocked_logs,
+            "adblock_logs": self.adblock_logs,
         }))
         .unwrap_or_else(|_| "{}".into());
 
@@ -1061,6 +1333,7 @@ impl BrowserManager {
 
     pub fn on_page_load_finished(&mut self, tab_id: u32, url: String) {
         let theme_script = self.get_theme_injection_script();
+        let adblock_script = self.get_adblock_injection_script();
 
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == tab_id) {
             tab.is_loading = false;
@@ -1073,9 +1346,10 @@ impl BrowserManager {
                 }
             }
 
-            // Inject matching theme script for web content
+            // Inject matching theme script & adblock script for web content
             if !Self::is_internal_url(&tab.url) {
                 let _ = tab.webview.evaluate_script(&theme_script);
+                let _ = tab.webview.evaluate_script(&adblock_script);
             }
         }
         self.sync_tab_update(tab_id);
@@ -1222,6 +1496,19 @@ impl BrowserManager {
                     self.sync_settings_tabs();
                     self.sync_full_state();
                 }
+                IpcIncoming::SetAdblockSetting { key, enabled } => {
+                    match key.as_str() {
+                        "adblock_enabled" => self.settings.adblock_enabled = enabled,
+                        "adblock_block_video_ads" => self.settings.adblock_block_video_ads = enabled,
+                        "adblock_cosmetic_filtering" => self.settings.adblock_cosmetic_filtering = enabled,
+                        "adblock_block_popups" => self.settings.adblock_block_popups = enabled,
+                        "adblock_aggressive_mode" => self.settings.adblock_aggressive_mode = enabled,
+                        _ => {}
+                    }
+                    self.storage.save_settings(&self.settings);
+                    self.sync_settings_tabs();
+                    self.sync_full_state();
+                }
                 IpcIncoming::AddBlockedDomain { domain } => {
                     let d = domain.trim().to_lowercase();
                     if !d.is_empty() && !self.settings.blocked_domains.contains(&d) {
@@ -1256,6 +1543,44 @@ impl BrowserManager {
                     self.storage.save_settings(&self.settings);
                     self.sync_settings_tabs();
                 }
+                IpcIncoming::AddAdblockDomain { domain } => {
+                    let d = domain.trim().to_lowercase();
+                    if !d.is_empty() && !self.settings.adblock_blocked_domains.contains(&d) {
+                        self.settings.adblock_blocked_domains.push(d);
+                        self.storage.save_settings(&self.settings);
+                        self.sync_settings_tabs();
+                    }
+                }
+                IpcIncoming::RemoveAdblockDomain { domain } => {
+                    let d = domain.trim().to_lowercase();
+                    self.settings.adblock_blocked_domains.retain(|item| item != &d);
+                    self.storage.save_settings(&self.settings);
+                    self.sync_settings_tabs();
+                }
+                IpcIncoming::AddAdblockWhitelist { domain } => {
+                    let d = domain.trim().to_lowercase();
+                    if !d.is_empty() && !self.settings.adblock_whitelisted_domains.contains(&d) {
+                        self.settings.adblock_whitelisted_domains.push(d);
+                        self.storage.save_settings(&self.settings);
+                        self.sync_settings_tabs();
+                    }
+                }
+                IpcIncoming::RemoveAdblockWhitelist { domain } => {
+                    let d = domain.trim().to_lowercase();
+                    self.settings.adblock_whitelisted_domains.retain(|item| item != &d);
+                    self.storage.save_settings(&self.settings);
+                    self.sync_settings_tabs();
+                }
+                IpcIncoming::ResetAdblockRules => {
+                    self.settings.adblock_blocked_domains = crate::ipc::default_adblock_domains();
+                    self.settings.adblock_whitelisted_domains.clear();
+                    self.storage.save_settings(&self.settings);
+                    self.sync_settings_tabs();
+                }
+                IpcIncoming::ClearAdblockLogs => {
+                    self.adblock_logs.clear();
+                    self.sync_settings_tabs();
+                }
                 IpcIncoming::ReportBlockedRequest { domain, url, req_type } => {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -1279,6 +1604,29 @@ impl BrowserManager {
                     }
                     self.sync_settings_tabs();
                 }
+                IpcIncoming::ReportBlockedAd { domain, url, req_type } => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| {
+                            let secs = d.as_secs();
+                            let h = (secs / 3600 % 24) as u32;
+                            let m = (secs / 60 % 60) as u32;
+                            let s = (secs % 60) as u32;
+                            format!("{:02}:{:02}:{:02}", h, m, s)
+                        })
+                        .unwrap_or_else(|_| "Just now".into());
+
+                    self.adblock_logs.insert(0, crate::ipc::BlockedRequestLog {
+                        domain,
+                        url,
+                        req_type,
+                        timestamp: now,
+                    });
+                    if self.adblock_logs.len() > 50 {
+                        self.adblock_logs.truncate(50);
+                    }
+                    self.sync_settings_tabs();
+                }
                 IpcIncoming::ClearBrowsingData { cookies, cache, local_storage } => {
                     let mut script = String::new();
                     if local_storage {
@@ -1288,7 +1636,7 @@ impl BrowserManager {
                         script.push_str("try { document.cookie.split(';').forEach(c => { document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/'); }); } catch(e){}");
                     }
                     if cache {
-                        script.push_str("try { if (window.caches) { caches.keys().then(keys => keys.forEach(k => caches.delete(k))); } } catch(e){}");
+                        script.push_str("try { if (window.caches) { caches.keys().then(keys => caches.delete(k))); } } catch(e){}");
                     }
                     for tab in &self.tabs {
                         if !Self::is_internal_url(&tab.url) {
@@ -1312,6 +1660,15 @@ impl BrowserManager {
                         let _ = self.tabs[pos].webview.evaluate_script("window.switchView && window.switchView('privacy');");
                     } else {
                         self.create_tab("titan://privacy");
+                    }
+                }
+                IpcIncoming::OpenAdblock => {
+                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url)) {
+                        let tab_id = self.tabs[pos].id;
+                        self.switch_tab(tab_id);
+                        let _ = self.tabs[pos].webview.evaluate_script("window.switchView && window.switchView('adblock');");
+                    } else {
+                        self.create_tab("titan://adblock");
                     }
                 }
                 IpcIncoming::OpenSettings => {
@@ -1395,6 +1752,7 @@ impl BrowserManager {
                 search_engine: self.settings.search_engine.clone(),
                 is_maximized: self.window.is_maximized(),
                 blocked_logs: self.blocked_logs.clone(),
+                adblock_logs: self.adblock_logs.clone(),
             };
 
             if let Ok(json) = serde_json::to_string(&state) {
