@@ -153,9 +153,10 @@ body.theme-amber {
   --accent-green: #84cc16;
 }
 
-body {
-  background: var(--bg-base);
+html, body {
+  background: var(--bg-base, #0e1017);
   color: var(--text-main);
+  color-scheme: dark;
   overflow: hidden;
   height: 100vh;
   width: 100vw;

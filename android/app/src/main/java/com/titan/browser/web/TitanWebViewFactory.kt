@@ -42,16 +42,22 @@ object TitanWebViewFactory {
         }
 
         // Dark mode support via AndroidX Webkit
-        if (isDarkTheme && WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true)
-        } else if (isDarkTheme && WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
-            @Suppress("DEPRECATION")
-            WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_ON)
+        if (isDarkTheme) {
+            webView.setBackgroundColor(android.graphics.Color.parseColor("#0F1015"))
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true)
+            } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+                @Suppress("DEPRECATION")
+                WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_ON)
+            }
+        } else {
+            webView.setBackgroundColor(android.graphics.Color.WHITE)
         }
     }
 
     fun createWebView(context: Context): WebView {
         return WebView(context).apply {
+            setBackgroundColor(android.graphics.Color.parseColor("#0F1015"))
             configureSettings(this)
         }
     }

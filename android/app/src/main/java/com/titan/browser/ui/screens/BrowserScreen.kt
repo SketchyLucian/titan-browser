@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -121,19 +122,21 @@ fun BrowserScreen(
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                activeTab?.webView?.let { webView ->
-                    AndroidView(
-                        factory = {
-                            (webView.parent as? ViewGroup)?.removeView(webView)
-                            webView
-                        },
-                        update = { view ->
-                            if (view != webView) {
+                key(activeTabId) {
+                    activeTab?.webView?.let { webView ->
+                        AndroidView(
+                            factory = {
                                 (webView.parent as? ViewGroup)?.removeView(webView)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                                webView
+                            },
+                            update = { view ->
+                                if (view != webView) {
+                                    (webView.parent as? ViewGroup)?.removeView(webView)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
 

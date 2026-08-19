@@ -129,6 +129,8 @@ impl BrowserManager {
     pub fn get_settings_html(&self, active_section: &str) -> String {
         let html = include_str!("../ui/settings.html");
         let js = include_str!("../ui/dist/settings.js");
+        let theme_class = format!("theme-{}", self.settings.theme);
+        let html_themed = html.replace("class=\"theme-titan-dark\"", &format!("class=\"{}\"", theme_class));
         let state_json = serde_json::to_string(&serde_json::json!({
             "settings": self.settings,
             "modules": self.modules,
@@ -138,7 +140,7 @@ impl BrowserManager {
         }))
         .unwrap_or_else(|_| "{}".into());
 
-        html.replace(
+        html_themed.replace(
             "<script src=\"settings.js\"></script>",
             &format!("<script>{}</script><script>(function(){{ function run(){{ window.initSettings && window.initSettings({}); }} if (document.readyState === 'loading') {{ window.addEventListener('DOMContentLoaded', run); }} else {{ run(); }} }})();</script>", js, state_json)
         )
@@ -147,6 +149,8 @@ impl BrowserManager {
     pub fn get_newtab_html(&self) -> String {
         let html = include_str!("../ui/newtab.html");
         let js = include_str!("../ui/dist/newtab.js");
+        let theme_class = format!("theme-{}", self.settings.theme);
+        let html_themed = html.replace("class=\"theme-titan-dark\"", &format!("class=\"{}\"", theme_class));
         let state_json = serde_json::to_string(&serde_json::json!({
             "theme": self.settings.theme,
             "accent_color": self.settings.accent_color,
@@ -154,7 +158,7 @@ impl BrowserManager {
         }))
         .unwrap_or_else(|_| "{}".into());
 
-        html.replace(
+        html_themed.replace(
             "<script src=\"newtab.js\"></script>",
             &format!("<script>{}</script><script>(function(){{ function run(){{ window.initNewTab && window.initNewTab({}); }} if (document.readyState === 'loading') {{ window.addEventListener('DOMContentLoaded', run); }} else {{ run(); }} }})();</script>", js, state_json)
         )
@@ -323,17 +327,23 @@ impl BrowserManager {
 
                 // 3. Document Root color-scheme & Meta Tag
                 try {{
-                    if (document.documentElement) {{
-                        document.documentElement.style.colorScheme = targetMode;
-                    }}
-                    if (document.head) {{
-                        let meta = document.querySelector('meta[name="color-scheme"]');
-                        if (!meta) {{
-                            meta = document.createElement('meta');
-                            meta.name = 'color-scheme';
-                            document.head.appendChild(meta);
+                    const applyColorScheme = () => {{
+                        if (document.documentElement) {{
+                            document.documentElement.style.colorScheme = targetMode;
                         }}
-                        meta.content = targetMode;
+                        if (document.head) {{
+                            let meta = document.querySelector('meta[name="color-scheme"]');
+                            if (!meta) {{
+                                meta = document.createElement('meta');
+                                meta.name = 'color-scheme';
+                                document.head.appendChild(meta);
+                            }}
+                            meta.content = targetMode;
+                        }}
+                    }};
+                    applyColorScheme();
+                    if (document.readyState === 'loading') {{
+                        document.addEventListener('DOMContentLoaded', applyColorScheme, {{ once: true }});
                     }}
                 }} catch(e) {{}}
 
@@ -1002,11 +1012,7 @@ impl BrowserManager {
         );
 
         let content_bounds = self.get_content_bounds();
-        let bg_color = if is_settings {
-            self.get_theme_background_color()
-        } else {
-            (255, 255, 255, 255)
-        };
+        let bg_color = self.get_theme_background_color();
 
         let builder = WebViewBuilder::new()
             .with_bounds(content_bounds)
@@ -1091,14 +1097,7 @@ impl BrowserManager {
     pub fn switch_tab(&mut self, target_id: u32) {
         let content_bounds = self.get_content_bounds();
 
-        // 1. Hide all other tabs FIRST so they don't block hit testing or steal focus
-        for tab in &mut self.tabs {
-            if tab.id != target_id {
-                let _ = tab.webview.set_visible(false);
-            }
-        }
-
-        // 2. Show, reposition and focus the target active tab
+        // 1. Show, reposition and focus the target active tab first to eliminate visual gaps
         if let Some(active_tab) = self.tabs.iter_mut().find(|t| t.id == target_id) {
             let _ = active_tab.webview.set_bounds(content_bounds);
             let _ = active_tab.webview.set_visible(true);
@@ -1107,6 +1106,13 @@ impl BrowserManager {
                 if !current_url.is_empty() && current_url != "about:blank" {
                     active_tab.url = current_url;
                 }
+            }
+        }
+
+        // 2. Hide all other tabs so they don't block hit testing or steal focus
+        for tab in &mut self.tabs {
+            if tab.id != target_id {
+                let _ = tab.webview.set_visible(false);
             }
         }
 
