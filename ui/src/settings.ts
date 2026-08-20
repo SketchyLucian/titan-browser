@@ -1,12 +1,37 @@
 // Titan Browser - Settings Controller (TypeScript)
 
 (function () {
+  let viewEntryAnimation: Animation | null = null;
+
   function sendIpc(message: IpcOutMessage) {
     if (window.ipc && window.ipc.postMessage) {
       window.ipc.postMessage(JSON.stringify(message));
     } else {
       console.log('Settings IPC Out:', message);
     }
+  }
+
+  function animateViewEntry(view: HTMLElement | null) {
+    if (!view) return;
+
+    viewEntryAnimation?.cancel();
+    view.style.willChange = 'opacity, transform';
+    const animation = view.animate(
+      [
+        { opacity: 0, transform: 'translate3d(0, 4px, 0)' },
+        { opacity: 1, transform: 'translate3d(0, 0, 0)' },
+      ],
+      { duration: 180, easing: 'ease' }
+    );
+    viewEntryAnimation = animation;
+    void animation.finished
+      .catch(() => undefined)
+      .finally(() => {
+        if (viewEntryAnimation === animation) {
+          view.style.removeProperty('will-change');
+          viewEntryAnimation = null;
+        }
+      });
   }
 
   function switchView(tabName: string) {
@@ -36,6 +61,16 @@
     if (viewThemes) viewThemes.classList.toggle('active', isThemes);
     if (viewPrivacy) viewPrivacy.classList.toggle('active', isPrivacy);
     if (viewAdblock) viewAdblock.classList.toggle('active', isAdblock);
+
+    animateViewEntry(
+      (isThemes
+        ? viewThemes
+        : isPrivacy
+          ? viewPrivacy
+          : isAdblock
+            ? viewAdblock
+            : viewGeneral) as HTMLElement | null
+    );
 
     if (tabBtnGeneral) tabBtnGeneral.classList.toggle('active', isGeneral);
     if (tabBtnThemes) tabBtnThemes.classList.toggle('active', isThemes);
@@ -98,7 +133,7 @@
 
   function checkForUpdates() {
     renderUpdateState({
-      current_version: '0.4.1',
+      current_version: '0.4.2',
       latest_version: null,
       release_url: null,
       status: 'Checking',

@@ -1,7 +1,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Titan Browser"
            Manufacturer="Titan Browser Team"
-           Version="0.4.1"
+           Version="0.4.2"
            UpgradeCode="4F829566-B541-4554-A619-3A000A1838A1"
            Scope="perMachine">
     
