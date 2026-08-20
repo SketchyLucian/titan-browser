@@ -49,4 +49,3 @@ pub fn apply_dark_window_attributes(window: &Window, bg_color: (u8, u8, u8)) {
         );
     }
 }
-

@@ -33,6 +33,7 @@ object TitanWebViewFactory {
         webView.setLayerType(View.LAYER_TYPE_NONE, null)
         webView.isNestedScrollingEnabled = false
         webView.keepScreenOn = true
+        webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true)
 
         // 3. Viewport, Rendering Pipeline & Latency Minimization
         settings.loadWithOverviewMode = true

@@ -18,9 +18,9 @@ import com.titan.browser.ui.theme.TitanTextTertiary
 
 @Composable
 fun NewTabScreen(
+    modifier: Modifier = Modifier,
     onNavigate: (String) -> Unit = {},
-    bookmarks: List<Bookmark> = emptyList(),
-    modifier: Modifier = Modifier
+    bookmarks: List<Bookmark> = emptyList()
 ) {
     Box(
         modifier = modifier

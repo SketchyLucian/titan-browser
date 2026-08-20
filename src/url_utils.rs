@@ -32,7 +32,8 @@ pub fn normalize_or_search_url_with_engine(input: &str, engine: &str) -> String 
     }
 
     // YouTube quick search prefix
-    if let Some(query) = trimmed.strip_prefix("@yt ")
+    if let Some(query) = trimmed
+        .strip_prefix("@yt ")
         .or_else(|| trimmed.strip_prefix("yt:"))
         .or_else(|| trimmed.strip_prefix("youtube "))
     {
@@ -43,22 +44,20 @@ pub fn normalize_or_search_url_with_engine(input: &str, engine: &str) -> String 
     }
 
     // GitHub quick search prefix
-    if let Some(query) = trimmed.strip_prefix("@gh ")
+    if let Some(query) = trimmed
+        .strip_prefix("@gh ")
         .or_else(|| trimmed.strip_prefix("gh:"))
         .or_else(|| trimmed.strip_prefix("github "))
     {
-        return format!(
-            "https://github.com/search?q={}",
-            urlencoding(query.trim())
-        );
+        return format!("https://github.com/search?q={}", urlencoding(query.trim()));
     }
 
     // DuckDuckGo quick search prefix
-    if let Some(query) = trimmed.strip_prefix("@ddg ").or_else(|| trimmed.strip_prefix("ddg:")) {
-        return format!(
-            "https://duckduckgo.com/?q={}",
-            urlencoding(query.trim())
-        );
+    if let Some(query) = trimmed
+        .strip_prefix("@ddg ")
+        .or_else(|| trimmed.strip_prefix("ddg:"))
+    {
+        return format!("https://duckduckgo.com/?q={}", urlencoding(query.trim()));
     }
 
     // Check if it looks like a domain name (e.g. "youtube.com", "crates.io", "localhost:8080")
@@ -107,10 +106,30 @@ pub fn strip_tracking_parameters(raw_url: &str) -> String {
         }
 
         let tracking_keys = [
-            "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
-            "utm_source_platform", "utm_creative_format", "utm_marketing_tactic",
-            "fbclid", "gclid", "gclsrc", "dclid", "msclkid", "mc_eid", "igshid",
-            "yclid", "_hsenc", "_hsmi", "wbraid", "gbraid", "twclid", "ref_src", "ref_url"
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
+            "utm_term",
+            "utm_content",
+            "utm_id",
+            "utm_source_platform",
+            "utm_creative_format",
+            "utm_marketing_tactic",
+            "fbclid",
+            "gclid",
+            "gclsrc",
+            "dclid",
+            "msclkid",
+            "mc_eid",
+            "igshid",
+            "yclid",
+            "_hsenc",
+            "_hsmi",
+            "wbraid",
+            "gbraid",
+            "twclid",
+            "ref_src",
+            "ref_url",
         ];
 
         let filtered_pairs: Vec<(String, String)> = parsed
@@ -190,7 +209,9 @@ mod tests {
     #[test]
     fn test_strip_tracking_parameters() {
         assert_eq!(
-            strip_tracking_parameters("https://example.com/article?utm_source=twitter&utm_medium=social&page=2"),
+            strip_tracking_parameters(
+                "https://example.com/article?utm_source=twitter&utm_medium=social&page=2"
+            ),
             "https://example.com/article?page=2"
         );
         assert_eq!(

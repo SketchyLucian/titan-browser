@@ -25,10 +25,14 @@ fn main() {
     }
     res.set_icon("assets/icon.ico");
     res.set("ProductName", "Titan Browser");
-    res.set("FileDescription", "Titan Browser - Fast Web Browser built in Rust");
+    res.set(
+        "FileDescription",
+        "Titan Browser - Fast Web Browser built in Rust",
+    );
     res.set("LegalCopyright", "Copyright (C) 2026 Titan Browser Team");
 
-    res.compile().expect("Failed to compile Windows resource with icon");
+    res.compile()
+        .expect("Failed to compile Windows resource with icon");
 
     let _ = std::process::Command::new("cmd")
         .args(["/c", "npm run build"])

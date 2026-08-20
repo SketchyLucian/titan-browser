@@ -13,7 +13,12 @@ pub fn show_native_bookmark_context_menu(window: &Window) -> Option<u32> {
     #[link(name = "user32")]
     extern "system" {
         fn CreatePopupMenu() -> isize;
-        fn AppendMenuW(hmenu: isize, flags: u32, id_new_item: usize, lp_new_item: *const u16) -> i32;
+        fn AppendMenuW(
+            hmenu: isize,
+            flags: u32,
+            id_new_item: usize,
+            lp_new_item: *const u16,
+        ) -> i32;
         fn TrackPopupMenu(
             hmenu: isize,
             flags: u32,

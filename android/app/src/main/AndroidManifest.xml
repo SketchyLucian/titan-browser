@@ -16,11 +16,6 @@
         android:theme="@style/Theme.TitanBrowser"
         android:usesCleartextTraffic="true">
 
-        <!-- Disable Multi-Process WebView to enforce 64-bit ARM64 in-process execution and eliminate 32-bit zygote degradation and IPC latency -->
-        <meta-data
-            android:name="android.webkit.WebView.MultiProcess"
-            android:value="false" />
-
         <activity
             android:name=".MainActivity"
             android:exported="true"

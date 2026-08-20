@@ -93,7 +93,6 @@ fn default_true() -> bool {
     true
 }
 
-
 pub fn default_blocked_domains() -> Vec<String> {
     vec![
         "pipe.aria.microsoft.com".into(),
@@ -217,7 +216,6 @@ pub struct IpcBrowserState {
     pub adblock_stats: crate::adblock_engine::AdblockStats,
 }
 
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum IpcIncoming {
@@ -318,7 +316,6 @@ pub enum IpcIncoming {
         rule: String,
     },
     ReportBlockedRequest {
-
         domain: String,
         url: String,
         req_type: String,
@@ -358,8 +355,12 @@ mod tests {
         assert!(settings.adblock_block_popups);
         assert!(!settings.adblock_aggressive_mode);
         assert!(!settings.adblock_blocked_domains.is_empty());
-        assert!(settings.adblock_blocked_domains.contains(&"doubleclick.net".to_string()));
-        assert!(settings.adblock_blocked_domains.contains(&"pagead2.googlesyndication.com".to_string()));
+        assert!(settings
+            .adblock_blocked_domains
+            .contains(&"doubleclick.net".to_string()));
+        assert!(settings
+            .adblock_blocked_domains
+            .contains(&"pagead2.googlesyndication.com".to_string()));
     }
 
     #[test]

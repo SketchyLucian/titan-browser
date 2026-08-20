@@ -8,10 +8,9 @@ mod menu_util;
 mod storage;
 mod url_utils;
 
-
 use browser::{BrowserManager, UserEvent};
-use storage::get_app_data_dir;
 use std::sync::Arc;
+use storage::get_app_data_dir;
 use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -89,10 +88,11 @@ fn main() {
                 browser.resize(logical.width, logical.height);
             }
             Event::WindowEvent {
-                event: WindowEvent::ScaleFactorChanged {
-                    scale_factor,
-                    new_inner_size,
-                },
+                event:
+                    WindowEvent::ScaleFactorChanged {
+                        scale_factor,
+                        new_inner_size,
+                    },
                 ..
             } => {
                 let logical = new_inner_size.to_logical::<f64>(scale_factor);

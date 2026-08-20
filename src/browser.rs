@@ -1,4 +1,6 @@
-use crate::ipc::{Bookmark, BrowserModule, BrowserSettings, IpcBrowserState, IpcIncoming, IpcTabInfo};
+use crate::ipc::{
+    Bookmark, BrowserModule, BrowserSettings, IpcBrowserState, IpcIncoming, IpcTabInfo,
+};
 use crate::storage::StorageManager;
 use crate::url_utils::normalize_or_search_url_with_engine;
 use std::sync::Arc;
@@ -43,7 +45,7 @@ pub struct BrowserManager {
     pub window_size: (f64, f64),
     pub blocked_logs: Vec<crate::ipc::BlockedRequestLog>,
     pub adblock_logs: Vec<crate::ipc::BlockedRequestLog>,
-    pub adblock_manager: Arc<crate::adblock_engine::AdblockEngineManager>,
+    pub adblock_manager: crate::adblock_engine::AdblockEngineManager,
 }
 
 impl BrowserManager {
@@ -54,11 +56,18 @@ impl BrowserManager {
         let settings = storage.load_settings();
         let win_size = window.inner_size().to_logical::<f64>(window.scale_factor());
 
-        let adblock_manager = Arc::new(crate::adblock_engine::AdblockEngineManager::new());
+        let adblock_manager = crate::adblock_engine::AdblockEngineManager::new();
         for rule in &settings.adblock_custom_rules {
             adblock_manager.add_custom_rule(rule.clone());
         }
-        for list in &["easylist", "easyprivacy", "ublock_filters", "ublock_badware", "ublock_privacy", "ublock_quick_fixes"] {
+        for list in &[
+            "easylist",
+            "easyprivacy",
+            "ublock_filters",
+            "ublock_badware",
+            "ublock_privacy",
+            "ublock_quick_fixes",
+        ] {
             let enabled = settings.adblock_filter_lists.iter().any(|l| l == list);
             adblock_manager.toggle_filter_list(list, enabled);
         }
@@ -81,7 +90,6 @@ impl BrowserManager {
             adblock_manager,
         }
     }
-
 
     pub fn get_header_height(&self) -> f64 {
         if self.settings.show_bookmarks_bar && !self.bookmarks.is_empty() {
@@ -142,7 +150,10 @@ impl BrowserManager {
         let html = include_str!("../ui/settings.html");
         let js = include_str!("../ui/dist/settings.js");
         let theme_class = format!("theme-{}", self.settings.theme);
-        let html_themed = html.replace("class=\"theme-titan-dark\"", &format!("class=\"{}\"", theme_class));
+        let html_themed = html.replace(
+            "class=\"theme-titan-dark\"",
+            &format!("class=\"{}\"", theme_class),
+        );
         let state_json = serde_json::to_string(&serde_json::json!({
             "settings": self.settings,
             "modules": self.modules,
@@ -153,7 +164,6 @@ impl BrowserManager {
             "adblock_custom_rules": self.adblock_manager.get_custom_rules(),
             "active_section": active_section,
         }))
-
         .unwrap_or_else(|_| "{}".into());
 
         html_themed.replace(
@@ -166,7 +176,10 @@ impl BrowserManager {
         let html = include_str!("../ui/newtab.html");
         let js = include_str!("../ui/dist/newtab.js");
         let theme_class = format!("theme-{}", self.settings.theme);
-        let html_themed = html.replace("class=\"theme-titan-dark\"", &format!("class=\"{}\"", theme_class));
+        let html_themed = html.replace(
+            "class=\"theme-titan-dark\"",
+            &format!("class=\"{}\"", theme_class),
+        );
         let state_json = serde_json::to_string(&serde_json::json!({
             "theme": self.settings.theme,
             "accent_color": self.settings.accent_color,
@@ -429,16 +442,18 @@ impl BrowserManager {
         let cosmetic_filtering = self.settings.adblock_cosmetic_filtering;
         let block_popups = self.settings.adblock_block_popups;
         let aggressive_mode = self.settings.adblock_aggressive_mode;
-        let whitelisted_domains_json = serde_json::to_string(&self.settings.adblock_whitelisted_domains)
-            .unwrap_or_else(|_| "[]".into());
+        let whitelisted_domains_json =
+            serde_json::to_string(&self.settings.adblock_whitelisted_domains)
+                .unwrap_or_else(|_| "[]".into());
         let blocked_domains_json = serde_json::to_string(&self.settings.adblock_blocked_domains)
             .unwrap_or_else(|_| "[]".into());
 
-        let (dynamic_selectors, dynamic_scriptlet) = self.adblock_manager.get_cosmetic_resources(target_url);
-        let dynamic_selectors_json = serde_json::to_string(&dynamic_selectors)
-            .unwrap_or_else(|_| "[]".into());
-        let scriptlet_code_json = serde_json::to_string(&dynamic_scriptlet)
-            .unwrap_or_else(|_| "\"\"".into());
+        let (dynamic_selectors, dynamic_scriptlet) =
+            self.adblock_manager.get_cosmetic_resources(target_url);
+        let dynamic_selectors_json =
+            serde_json::to_string(&dynamic_selectors).unwrap_or_else(|_| "[]".into());
+        let scriptlet_code_json =
+            serde_json::to_string(&dynamic_scriptlet).unwrap_or_else(|_| "\"\"".into());
 
         format!(
             r#"
@@ -912,7 +927,6 @@ impl BrowserManager {
         let privacy_script = self.get_privacy_injection_script();
         let adblock_script = self.get_adblock_injection_script(&normalized_url);
 
-
         let init_script = format!(
             r#"
             (function() {{
@@ -1158,7 +1172,8 @@ impl BrowserManager {
             input.to_string()
         };
 
-        let normalized = normalize_or_search_url_with_engine(&clean_input, &self.settings.search_engine);
+        let normalized =
+            normalize_or_search_url_with_engine(&clean_input, &self.settings.search_engine);
         if let Some(active_id) = self.active_tab_id {
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
                 tab.url = normalized.clone();
@@ -1270,7 +1285,10 @@ impl BrowserManager {
         }))
         .unwrap_or_else(|_| "{}".into());
 
-        let script = format!("window.initSettings && window.initSettings({});", state_json);
+        let script = format!(
+            "window.initSettings && window.initSettings({});",
+            state_json
+        );
         for tab in &self.tabs {
             if Self::is_settings_url(&tab.url) {
                 let _ = tab.webview.evaluate_script(&script);
@@ -1306,7 +1324,11 @@ impl BrowserManager {
         }
 
         // Early inject uBO cosmetic rules & scriptlets as soon as page load starts
-        if !target_url.is_empty() && !Self::is_internal_url(&target_url) && self.settings.adblock_enabled && self.settings.adblock_cosmetic_filtering {
+        if !target_url.is_empty()
+            && !Self::is_internal_url(&target_url)
+            && self.settings.adblock_enabled
+            && self.settings.adblock_cosmetic_filtering
+        {
             let dynamic_adblock = self.get_adblock_dynamic_evaluation_script(&target_url);
             if !dynamic_adblock.is_empty() {
                 if let Some(tab) = self.tabs.iter().find(|t| t.id == tab_id) {
@@ -1317,7 +1339,6 @@ impl BrowserManager {
 
         self.sync_tab_update(tab_id);
     }
-
 
     pub fn on_page_load_finished(&mut self, tab_id: u32, url: String) {
         let is_dark_reader = self.is_module_enabled("dark_reader");
@@ -1349,7 +1370,11 @@ impl BrowserManager {
         }
 
         // Inject dynamic uBlock Origin cosmetic rules & scriptlets for the loaded page URL
-        if !final_url.is_empty() && !Self::is_internal_url(&final_url) && self.settings.adblock_enabled && self.settings.adblock_cosmetic_filtering {
+        if !final_url.is_empty()
+            && !Self::is_internal_url(&final_url)
+            && self.settings.adblock_enabled
+            && self.settings.adblock_cosmetic_filtering
+        {
             let dynamic_adblock = self.get_adblock_dynamic_evaluation_script(&final_url);
             if !dynamic_adblock.is_empty() {
                 if let Some(tab) = self.tabs.iter().find(|t| t.id == tab_id) {
@@ -1357,7 +1382,6 @@ impl BrowserManager {
                 }
             }
         }
-
 
         self.sync_tab_update(tab_id);
 
@@ -1498,10 +1522,14 @@ impl BrowserManager {
                     match key.as_str() {
                         "do_not_track" => self.settings.do_not_track = enabled,
                         "global_privacy_control" => self.settings.global_privacy_control = enabled,
-                        "strip_tracking_parameters" => self.settings.strip_tracking_parameters = enabled,
+                        "strip_tracking_parameters" => {
+                            self.settings.strip_tracking_parameters = enabled
+                        }
                         "block_webrtc_leak" => self.settings.block_webrtc_leak = enabled,
                         "block_fingerprinting" => self.settings.block_fingerprinting = enabled,
-                        "block_hyperlink_auditing" => self.settings.block_hyperlink_auditing = enabled,
+                        "block_hyperlink_auditing" => {
+                            self.settings.block_hyperlink_auditing = enabled
+                        }
                         "telemetry_disabled" => self.settings.telemetry_disabled = enabled,
                         _ => {}
                     }
@@ -1512,10 +1540,16 @@ impl BrowserManager {
                 IpcIncoming::SetAdblockSetting { key, enabled } => {
                     match key.as_str() {
                         "adblock_enabled" => self.settings.adblock_enabled = enabled,
-                        "adblock_block_video_ads" => self.settings.adblock_block_video_ads = enabled,
-                        "adblock_cosmetic_filtering" => self.settings.adblock_cosmetic_filtering = enabled,
+                        "adblock_block_video_ads" => {
+                            self.settings.adblock_block_video_ads = enabled
+                        }
+                        "adblock_cosmetic_filtering" => {
+                            self.settings.adblock_cosmetic_filtering = enabled
+                        }
                         "adblock_block_popups" => self.settings.adblock_block_popups = enabled,
-                        "adblock_aggressive_mode" => self.settings.adblock_aggressive_mode = enabled,
+                        "adblock_aggressive_mode" => {
+                            self.settings.adblock_aggressive_mode = enabled
+                        }
                         _ => {}
                     }
                     self.storage.save_settings(&self.settings);
@@ -1566,7 +1600,9 @@ impl BrowserManager {
                 }
                 IpcIncoming::RemoveAdblockDomain { domain } => {
                     let d = domain.trim().to_lowercase();
-                    self.settings.adblock_blocked_domains.retain(|item| item != &d);
+                    self.settings
+                        .adblock_blocked_domains
+                        .retain(|item| item != &d);
                     self.storage.save_settings(&self.settings);
                     self.sync_settings_tabs();
                 }
@@ -1580,7 +1616,9 @@ impl BrowserManager {
                 }
                 IpcIncoming::RemoveAdblockWhitelist { domain } => {
                     let d = domain.trim().to_lowercase();
-                    self.settings.adblock_whitelisted_domains.retain(|item| item != &d);
+                    self.settings
+                        .adblock_whitelisted_domains
+                        .retain(|item| item != &d);
                     self.storage.save_settings(&self.settings);
                     self.sync_settings_tabs();
                 }
@@ -1627,8 +1665,11 @@ impl BrowserManager {
                     self.sync_settings_tabs();
                     self.sync_full_state();
                 }
-                IpcIncoming::ReportBlockedRequest { domain, url, req_type } => {
-
+                IpcIncoming::ReportBlockedRequest {
+                    domain,
+                    url,
+                    req_type,
+                } => {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| {
@@ -1640,18 +1681,25 @@ impl BrowserManager {
                         })
                         .unwrap_or_else(|_| "Just now".into());
 
-                    self.blocked_logs.insert(0, crate::ipc::BlockedRequestLog {
-                        domain,
-                        url,
-                        req_type,
-                        timestamp: now,
-                    });
+                    self.blocked_logs.insert(
+                        0,
+                        crate::ipc::BlockedRequestLog {
+                            domain,
+                            url,
+                            req_type,
+                            timestamp: now,
+                        },
+                    );
                     if self.blocked_logs.len() > 50 {
                         self.blocked_logs.truncate(50);
                     }
                     self.sync_settings_tabs();
                 }
-                IpcIncoming::ReportBlockedAd { domain, url, req_type } => {
+                IpcIncoming::ReportBlockedAd {
+                    domain,
+                    url,
+                    req_type,
+                } => {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| {
@@ -1663,21 +1711,30 @@ impl BrowserManager {
                         })
                         .unwrap_or_else(|_| "Just now".into());
 
-                    self.adblock_logs.insert(0, crate::ipc::BlockedRequestLog {
-                        domain,
-                        url,
-                        req_type,
-                        timestamp: now,
-                    });
+                    self.adblock_logs.insert(
+                        0,
+                        crate::ipc::BlockedRequestLog {
+                            domain,
+                            url,
+                            req_type,
+                            timestamp: now,
+                        },
+                    );
                     if self.adblock_logs.len() > 50 {
                         self.adblock_logs.truncate(50);
                     }
                     self.sync_settings_tabs();
                 }
-                IpcIncoming::ClearBrowsingData { cookies, cache, local_storage } => {
+                IpcIncoming::ClearBrowsingData {
+                    cookies,
+                    cache,
+                    local_storage,
+                } => {
                     let mut script = String::new();
                     if local_storage {
-                        script.push_str("try { localStorage.clear(); sessionStorage.clear(); } catch(e){}");
+                        script.push_str(
+                            "try { localStorage.clear(); sessionStorage.clear(); } catch(e){}",
+                        );
                     }
                     if cookies {
                         script.push_str("try { document.cookie.split(';').forEach(c => { document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/'); }); } catch(e){}");
@@ -1692,37 +1749,49 @@ impl BrowserManager {
                     }
                 }
                 IpcIncoming::OpenThemes => {
-                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url)) {
+                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url))
+                    {
                         let tab_id = self.tabs[pos].id;
                         self.switch_tab(tab_id);
-                        let _ = self.tabs[pos].webview.evaluate_script("window.switchView && window.switchView('themes');");
+                        let _ = self.tabs[pos]
+                            .webview
+                            .evaluate_script("window.switchView && window.switchView('themes');");
                     } else {
                         self.create_tab("titan://themes");
                     }
                 }
                 IpcIncoming::OpenPrivacy => {
-                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url)) {
+                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url))
+                    {
                         let tab_id = self.tabs[pos].id;
                         self.switch_tab(tab_id);
-                        let _ = self.tabs[pos].webview.evaluate_script("window.switchView && window.switchView('privacy');");
+                        let _ = self.tabs[pos]
+                            .webview
+                            .evaluate_script("window.switchView && window.switchView('privacy');");
                     } else {
                         self.create_tab("titan://privacy");
                     }
                 }
                 IpcIncoming::OpenAdblock => {
-                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url)) {
+                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url))
+                    {
                         let tab_id = self.tabs[pos].id;
                         self.switch_tab(tab_id);
-                        let _ = self.tabs[pos].webview.evaluate_script("window.switchView && window.switchView('adblock');");
+                        let _ = self.tabs[pos]
+                            .webview
+                            .evaluate_script("window.switchView && window.switchView('adblock');");
                     } else {
                         self.create_tab("titan://adblock");
                     }
                 }
                 IpcIncoming::OpenSettings => {
-                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url)) {
+                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url))
+                    {
                         let tab_id = self.tabs[pos].id;
                         self.switch_tab(tab_id);
-                        let _ = self.tabs[pos].webview.evaluate_script("window.switchView && window.switchView('general');");
+                        let _ = self.tabs[pos]
+                            .webview
+                            .evaluate_script("window.switchView && window.switchView('general');");
                     } else {
                         self.create_tab("titan://settings");
                     }
@@ -1803,7 +1872,6 @@ impl BrowserManager {
                 adblock_filter_lists: self.adblock_manager.get_filter_lists_info(),
                 adblock_stats: self.adblock_manager.get_stats(),
             };
-
 
             if let Ok(json) = serde_json::to_string(&state) {
                 let script = format!("window.onBrowserState && window.onBrowserState({});", json);

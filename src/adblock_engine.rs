@@ -2,7 +2,7 @@ use adblock::engine::Engine;
 use adblock::lists::{FilterSet, ParseOptions};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 /// Represents an ad/tracker filter list subscription
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,13 +34,12 @@ pub struct NetworkFilterDecision {
     pub redirect: Option<String>,
 }
 
-
 /// Core uBlock Origin / Adblock Plus manager
 pub struct AdblockEngineManager {
-    engine: Arc<RwLock<Engine>>,
-    custom_rules: Arc<RwLock<Vec<String>>>,
-    enabled_lists: Arc<RwLock<HashSet<String>>>,
-    stats: Arc<RwLock<AdblockStats>>,
+    engine: RwLock<Engine>,
+    custom_rules: RwLock<Vec<String>>,
+    enabled_lists: RwLock<HashSet<String>>,
+    stats: RwLock<AdblockStats>,
 }
 
 impl Default for AdblockEngineManager {
@@ -73,10 +72,10 @@ impl AdblockEngineManager {
         };
 
         Self {
-            engine: Arc::new(RwLock::new(engine)),
-            custom_rules: Arc::new(RwLock::new(custom_rules)),
-            enabled_lists: Arc::new(RwLock::new(enabled_lists)),
-            stats: Arc::new(RwLock::new(stats)),
+            engine: RwLock::new(engine),
+            custom_rules: RwLock::new(custom_rules),
+            enabled_lists: RwLock::new(enabled_lists),
+            stats: RwLock::new(stats),
         }
     }
 
@@ -149,7 +148,6 @@ impl AdblockEngineManager {
         source_url: &str,
         request_type: &str,
     ) -> NetworkFilterDecision {
-
         let engine = match self.engine.read() {
             Ok(e) => e,
             Err(_) => {
@@ -203,7 +201,6 @@ impl AdblockEngineManager {
                 redirect: None,
             }
         }
-
     }
 
     /// Retrieve host-specific cosmetic CSS selectors and scriptlets for a given webpage URL
@@ -226,7 +223,6 @@ impl AdblockEngineManager {
 
         (hide_selectors, injected_script)
     }
-
 
     /// Add a custom uBO filter rule (e.g. `||ads.example.com^$script`, `example.com##.ad-banner`)
     pub fn add_custom_rule(&self, rule: String) -> bool {
@@ -268,7 +264,10 @@ impl AdblockEngineManager {
 
     /// Get all configured custom filter rules
     pub fn get_custom_rules(&self) -> Vec<String> {
-        self.custom_rules.read().map(|r| r.clone()).unwrap_or_default()
+        self.custom_rules
+            .read()
+            .map(|r| r.clone())
+            .unwrap_or_default()
     }
 
     /// Toggle an official filter list on or off
@@ -284,7 +283,11 @@ impl AdblockEngineManager {
             enabled_lists.remove(list_id);
         }
 
-        let custom_rules = self.custom_rules.read().map(|r| r.clone()).unwrap_or_default();
+        let custom_rules = self
+            .custom_rules
+            .read()
+            .map(|r| r.clone())
+            .unwrap_or_default();
         let new_engine = Self::build_engine(&enabled_lists, &custom_rules);
         let total_rules = Self::count_rules(&enabled_lists, &custom_rules);
 
@@ -298,7 +301,11 @@ impl AdblockEngineManager {
 
     /// Get all available filter lists with their current state and rule counts
     pub fn get_filter_lists_info(&self) -> Vec<FilterListConfig> {
-        let enabled_lists = self.enabled_lists.read().map(|l| l.clone()).unwrap_or_default();
+        let enabled_lists = self
+            .enabled_lists
+            .read()
+            .map(|l| l.clone())
+            .unwrap_or_default();
 
         vec![
             FilterListConfig {
@@ -352,7 +359,11 @@ impl AdblockEngineManager {
     }
 
     fn rebuild_engine_internal(&self, custom_rules: &[String]) {
-        let enabled_lists = self.enabled_lists.read().map(|l| l.clone()).unwrap_or_default();
+        let enabled_lists = self
+            .enabled_lists
+            .read()
+            .map(|l| l.clone())
+            .unwrap_or_default();
         let new_engine = Self::build_engine(&enabled_lists, custom_rules);
         let total_rules = Self::count_rules(&enabled_lists, custom_rules);
 
@@ -540,7 +551,6 @@ impl AdblockEngineManager {
         ]
     }
 
-
     pub fn get_easyprivacy_rules() -> Vec<String> {
         vec![
             // Google Analytics & Tag Manager
@@ -669,7 +679,6 @@ impl AdblockEngineManager {
         ]
     }
 
-
     pub fn get_ublock_badware_rules() -> Vec<String> {
         vec![
             // Coin Miners & Cryptojackers
@@ -777,8 +786,12 @@ mod tests {
     #[test]
     fn test_cosmetic_resources() {
         let manager = AdblockEngineManager::new();
-        let (hide_selectors, _) = manager.get_cosmetic_resources("https://www.youtube.com/watch?v=123");
-        assert!(!hide_selectors.is_empty(), "Should return cosmetic rules for YouTube");
+        let (hide_selectors, _) =
+            manager.get_cosmetic_resources("https://www.youtube.com/watch?v=123");
+        assert!(
+            !hide_selectors.is_empty(),
+            "Should return cosmetic rules for YouTube"
+        );
     }
 
     #[test]
@@ -804,6 +817,9 @@ mod tests {
             "https://example.com",
             "image",
         );
-        assert!(!decision_after.matched, "Custom rule should no longer match after removal");
+        assert!(
+            !decision_after.matched,
+            "Custom rule should no longer match after removal"
+        );
     }
 }
