@@ -76,6 +76,8 @@ pub struct BrowserSettings {
     pub adblock_filter_lists: Vec<String>,
     #[serde(default)]
     pub adblock_custom_rules: Vec<String>,
+    #[serde(default = "default_true")]
+    pub auto_update_enabled: bool,
 }
 
 pub fn default_filter_lists() -> Vec<String> {
@@ -196,6 +198,7 @@ impl Default for BrowserSettings {
             adblock_whitelisted_domains: vec![],
             adblock_filter_lists: default_filter_lists(),
             adblock_custom_rules: vec![],
+            auto_update_enabled: true,
         }
     }
 }
@@ -214,6 +217,7 @@ pub struct IpcBrowserState {
     pub adblock_logs: Vec<BlockedRequestLog>,
     pub adblock_filter_lists: Vec<crate::adblock_engine::FilterListConfig>,
     pub adblock_stats: crate::adblock_engine::AdblockStats,
+    pub update_state: crate::updater::UpdateState,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -305,6 +309,11 @@ pub enum IpcIncoming {
     },
     ResetAdblockRules,
     ClearAdblockLogs,
+    SetAutoUpdate {
+        enabled: bool,
+    },
+    CheckForUpdates,
+    OpenUpdateDownload,
     ToggleFilterList {
         list_id: String,
         enabled: bool,

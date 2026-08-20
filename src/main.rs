@@ -6,6 +6,7 @@ mod drag_util;
 mod ipc;
 mod menu_util;
 mod storage;
+mod updater;
 mod url_utils;
 
 use browser::{BrowserManager, UserEvent};
@@ -68,6 +69,9 @@ fn main() {
             Event::UserEvent(user_event) => match user_event {
                 UserEvent::Ipc(msg) => {
                     browser.handle_incoming_ipc(&msg);
+                }
+                UserEvent::UpdateCheckFinished(result) => {
+                    browser.on_update_check_finished(result);
                 }
                 UserEvent::PageLoadStarted { tab_id, url } => {
                     browser.on_page_load_started(tab_id, url);

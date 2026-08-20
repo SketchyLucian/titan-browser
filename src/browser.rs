@@ -2,8 +2,10 @@ use crate::ipc::{
     Bookmark, BrowserModule, BrowserSettings, IpcBrowserState, IpcIncoming, IpcTabInfo,
 };
 use crate::storage::StorageManager;
+use crate::updater::{UpdateCheckResult, UpdateInfo, UpdateState, UpdateStatus};
 use crate::url_utils::normalize_or_search_url_with_engine;
 use std::sync::Arc;
+use std::thread;
 use tao::dpi::{LogicalPosition, LogicalSize};
 use tao::event_loop::EventLoopProxy;
 use tao::window::Window;
@@ -15,6 +17,7 @@ pub const HEADER_HEIGHT_EXPANDED: f64 = 102.0;
 #[derive(Debug)]
 pub enum UserEvent {
     Ipc(String),
+    UpdateCheckFinished(UpdateCheckResult),
     PageLoadStarted { tab_id: u32, url: String },
     PageLoadFinished { tab_id: u32, url: String },
     Exit,
@@ -46,6 +49,7 @@ pub struct BrowserManager {
     pub blocked_logs: Vec<crate::ipc::BlockedRequestLog>,
     pub adblock_logs: Vec<crate::ipc::BlockedRequestLog>,
     pub adblock_manager: crate::adblock_engine::AdblockEngineManager,
+    pub update_state: UpdateState,
 }
 
 impl BrowserManager {
@@ -88,6 +92,7 @@ impl BrowserManager {
             blocked_logs: Vec::new(),
             adblock_logs: Vec::new(),
             adblock_manager,
+            update_state: UpdateState::default(),
         }
     }
 
@@ -129,6 +134,10 @@ impl BrowserManager {
 
         // Open default initial tab (Titan New Tab)
         self.create_tab("titan://newtab");
+
+        if self.settings.auto_update_enabled {
+            self.check_for_updates();
+        }
     }
 
     pub fn get_chrome_html() -> String {
@@ -162,6 +171,7 @@ impl BrowserManager {
             "adblock_filter_lists": self.adblock_manager.get_filter_lists_info(),
             "adblock_stats": self.adblock_manager.get_stats(),
             "adblock_custom_rules": self.adblock_manager.get_custom_rules(),
+            "update_state": self.update_state,
             "active_section": active_section,
         }))
         .unwrap_or_else(|_| "{}".into());
@@ -1282,6 +1292,7 @@ impl BrowserManager {
             "adblock_filter_lists": self.adblock_manager.get_filter_lists_info(),
             "adblock_stats": self.adblock_manager.get_stats(),
             "adblock_custom_rules": self.adblock_manager.get_custom_rules(),
+            "update_state": self.update_state,
         }))
         .unwrap_or_else(|_| "{}".into());
 
@@ -1309,6 +1320,57 @@ impl BrowserManager {
         self.update_all_tabs_theme();
 
         self.sync_full_state();
+    }
+
+    pub fn check_for_updates(&mut self) {
+        self.update_state.status = UpdateStatus::Checking;
+        self.update_state.message = "Checking for updates...".into();
+        self.sync_settings_tabs();
+        self.sync_full_state();
+
+        let proxy = self.proxy.clone();
+        let current_version = self.update_state.current_version.clone();
+        thread::spawn(move || {
+            let result = crate::updater::check_for_updates(&current_version);
+            let _ = proxy.send_event(UserEvent::UpdateCheckFinished(result));
+        });
+    }
+
+    pub fn on_update_check_finished(&mut self, result: UpdateCheckResult) {
+        match result {
+            UpdateCheckResult::Available(UpdateInfo {
+                version,
+                release_url,
+            }) => {
+                self.update_state.latest_version = Some(version.clone());
+                self.update_state.release_url = Some(release_url);
+                self.update_state.status = UpdateStatus::UpdateAvailable;
+                self.update_state.message = format!("Version {version} is available.");
+            }
+            UpdateCheckResult::UpToDate(UpdateInfo {
+                version,
+                release_url,
+            }) => {
+                self.update_state.latest_version = Some(version.clone());
+                self.update_state.release_url = Some(release_url);
+                self.update_state.status = UpdateStatus::UpToDate;
+                self.update_state.message = format!("Titan Browser is up to date ({version}).");
+            }
+            UpdateCheckResult::Failed(message) => {
+                self.update_state.status = UpdateStatus::Error;
+                self.update_state.message = message;
+            }
+        }
+
+        self.sync_settings_tabs();
+        self.sync_full_state();
+    }
+
+    pub fn open_update_download(&mut self) {
+        let url = self.update_state.release_url.clone().unwrap_or_else(|| {
+            "https://github.com/SketchyLucian/titan-browser/releases/latest".into()
+        });
+        self.create_tab(&url);
     }
 
     pub fn on_page_load_started(&mut self, tab_id: u32, url: String) {
@@ -1632,6 +1694,21 @@ impl BrowserManager {
                     self.adblock_logs.clear();
                     self.sync_settings_tabs();
                 }
+                IpcIncoming::SetAutoUpdate { enabled } => {
+                    self.settings.auto_update_enabled = enabled;
+                    self.storage.save_settings(&self.settings);
+                    self.sync_settings_tabs();
+                    self.sync_full_state();
+                    if enabled {
+                        self.check_for_updates();
+                    }
+                }
+                IpcIncoming::CheckForUpdates => {
+                    self.check_for_updates();
+                }
+                IpcIncoming::OpenUpdateDownload => {
+                    self.open_update_download();
+                }
                 IpcIncoming::ToggleFilterList { list_id, enabled } => {
                     self.adblock_manager.toggle_filter_list(&list_id, enabled);
                     if enabled {
@@ -1871,6 +1948,7 @@ impl BrowserManager {
                 adblock_logs: self.adblock_logs.clone(),
                 adblock_filter_lists: self.adblock_manager.get_filter_lists_info(),
                 adblock_stats: self.adblock_manager.get_stats(),
+                update_state: self.update_state.clone(),
             };
 
             if let Ok(json) = serde_json::to_string(&state) {

@@ -45,6 +45,16 @@ interface AdblockStats {
   estimated_bandwidth_saved_bytes: number;
 }
 
+type UpdateStatus = 'Idle' | 'Checking' | 'UpdateAvailable' | 'UpToDate' | 'Error';
+
+interface UpdateState {
+  current_version: string;
+  latest_version?: string | null;
+  release_url?: string | null;
+  status: UpdateStatus;
+  message: string;
+}
+
 interface BrowserSettings {
   search_engine: string;
   theme: string;
@@ -68,6 +78,7 @@ interface BrowserSettings {
   adblock_whitelisted_domains?: string[];
   adblock_filter_lists?: string[];
   adblock_custom_rules?: string[];
+  auto_update_enabled?: boolean;
 }
 
 interface BrowserState {
@@ -84,6 +95,7 @@ interface BrowserState {
   adblock_logs?: BlockedRequestLog[];
   adblock_filter_lists?: FilterListConfig[];
   adblock_stats?: AdblockStats;
+  update_state?: UpdateState;
 }
 
 interface SettingsInitState extends Partial<BrowserState> {
@@ -127,6 +139,9 @@ type IpcOutMessage =
   | { type: 'RemoveAdblockWhitelist'; domain: string }
   | { type: 'ResetAdblockRules' }
   | { type: 'ClearAdblockLogs' }
+  | { type: 'SetAutoUpdate'; enabled: boolean }
+  | { type: 'CheckForUpdates' }
+  | { type: 'OpenUpdateDownload' }
   | { type: 'ToggleFilterList'; list_id: string; enabled: boolean }
   | { type: 'AddCustomFilterRule'; rule: string }
   | { type: 'RemoveCustomFilterRule'; rule: string }
@@ -160,6 +175,9 @@ interface Window {
   toggleDarkReader?: (enabled: boolean) => void;
   setPrivacySetting?: (key: string, enabled: boolean) => void;
   setAdblockSetting?: (key: string, enabled: boolean) => void;
+  setAutoUpdate?: (enabled: boolean) => void;
+  checkForUpdates?: () => void;
+  openUpdateDownload?: () => void;
   clearBrowsingData?: () => void;
   addBlockedDomain?: () => void;
   removeBlockedDomain?: (domain: string) => void;

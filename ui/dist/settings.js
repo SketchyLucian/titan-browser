@@ -98,6 +98,47 @@
     function toggleBookmarksBar(show) {
         sendIpc({ type: 'SetShowBookmarksBar', show: show });
     }
+    function setAutoUpdate(enabled) {
+        sendIpc({ type: 'SetAutoUpdate', enabled: enabled });
+    }
+    function checkForUpdates() {
+        renderUpdateState({
+            current_version: '0.3.0',
+            latest_version: null,
+            release_url: null,
+            status: 'Checking',
+            message: 'Checking for updates...',
+        });
+        sendIpc({ type: 'CheckForUpdates' });
+    }
+    function openUpdateDownload() {
+        sendIpc({ type: 'OpenUpdateDownload' });
+    }
+    function renderUpdateState(updateState) {
+        const statusEl = document.getElementById('updateStatusText');
+        const versionEl = document.getElementById('updateVersionText');
+        const checkBtn = document.getElementById('updateCheckBtn');
+        const openBtn = document.getElementById('updateOpenBtn');
+        if (!updateState)
+            return;
+        if (versionEl) {
+            const latest = updateState.latest_version ? ` • Latest: ${updateState.latest_version}` : '';
+            versionEl.textContent = `Current version: ${updateState.current_version}${latest}`;
+        }
+        if (statusEl) {
+            statusEl.textContent = updateState.message;
+            statusEl.classList.toggle('available', updateState.status === 'UpdateAvailable');
+            statusEl.classList.toggle('error', updateState.status === 'Error');
+        }
+        if (checkBtn) {
+            checkBtn.disabled = updateState.status === 'Checking';
+            checkBtn.textContent = updateState.status === 'Checking' ? 'Checking...' : 'Check Now';
+        }
+        if (openBtn) {
+            openBtn.style.display = updateState.release_url ? 'inline-flex' : 'none';
+            openBtn.textContent = updateState.status === 'UpdateAvailable' ? 'Get Update' : 'Release Notes';
+        }
+    }
     function toggleDarkReader(enabled) {
         sendIpc({
             type: 'ToggleModule',
@@ -160,6 +201,9 @@
             const bmToggle = document.getElementById('showBookmarksToggle');
             if (bmToggle)
                 bmToggle.checked = !!state.settings.show_bookmarks_bar;
+            const autoUpdateToggle = document.getElementById('autoUpdateToggle');
+            if (autoUpdateToggle)
+                autoUpdateToggle.checked = state.settings.auto_update_enabled !== false;
             // Privacy Settings
             const dntToggle = document.getElementById('dntToggle');
             if (dntToggle)
@@ -199,6 +243,7 @@
             if (aggressiveAdblockToggle)
                 aggressiveAdblockToggle.checked = !!state.settings.adblock_aggressive_mode;
         }
+        renderUpdateState(state.update_state);
         if (state.modules) {
             const darkMod = state.modules.find((m) => m.id === 'dark_reader');
             const drToggle = document.getElementById('darkReaderToggle');
@@ -213,6 +258,9 @@
     window.selectAccent = selectAccent;
     window.changeSearchEngine = changeSearchEngine;
     window.toggleBookmarksBar = toggleBookmarksBar;
+    window.setAutoUpdate = setAutoUpdate;
+    window.checkForUpdates = checkForUpdates;
+    window.openUpdateDownload = openUpdateDownload;
     window.toggleDarkReader = toggleDarkReader;
     window.setPrivacySetting = setPrivacySetting;
     window.setAdblockSetting = setAdblockSetting;

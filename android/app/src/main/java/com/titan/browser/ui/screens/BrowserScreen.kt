@@ -42,6 +42,7 @@ fun BrowserScreen(
     val activeTabId by viewModel.activeTabId.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val updateState by viewModel.updateState.collectAsState()
 
     val isTabGridVisible by viewModel.isTabGridVisible.collectAsState()
     val isMenuVisible by viewModel.isMenuVisible.collectAsState()
@@ -186,6 +187,7 @@ fun BrowserScreen(
         ) {
             SettingsScreen(
                 settings = settings,
+                updateState = updateState,
                 onUpdateSearchEngine = { viewModel.updateSearchEngine(it) },
                 onToggleDarkTheme = { viewModel.setDarkTheme(it) },
                 onToggleAdblock = { viewModel.toggleAdblock(it) },
@@ -193,6 +195,9 @@ fun BrowserScreen(
                 onToggleCosmeticFiltering = { viewModel.toggleCosmeticFiltering(it) },
                 onToggleBlockPopups = { viewModel.toggleBlockPopups(it) },
                 onToggleStripTrackingParameters = { viewModel.toggleStripTrackingParameters(it) },
+                onToggleAutoUpdate = { viewModel.toggleAutoUpdate(it) },
+                onCheckForUpdates = { viewModel.checkForUpdates() },
+                onOpenUpdate = { viewModel.openUpdateRelease() },
                 onClose = { viewModel.setSettingsVisible(false) }
             )
 

@@ -11,7 +11,11 @@ import com.titan.browser.model.Bookmark
 import com.titan.browser.model.BrowserSettings
 import com.titan.browser.model.SearchEngine
 import com.titan.browser.model.Tab
+import com.titan.browser.model.UpdateState
+import com.titan.browser.model.UpdateStatus
 import com.titan.browser.storage.StorageManager
+import com.titan.browser.update.UpdateChecker
+import com.titan.browser.BuildConfig
 import com.titan.browser.web.TitanWebChromeClient
 import com.titan.browser.web.TitanWebViewClient
 import com.titan.browser.web.TitanWebViewFactory
@@ -37,6 +41,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val _settings = MutableStateFlow(BrowserSettings())
     val settings: StateFlow<BrowserSettings> = _settings.asStateFlow()
+
+    private val _updateState = MutableStateFlow(
+        UpdateState(currentVersion = BuildConfig.VERSION_NAME)
+    )
+    val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
 
     // UI Overlay / Sheet Visibilities
     private val _isTabGridVisible = MutableStateFlow(false)
@@ -75,7 +84,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private fun loadData() {
         viewModelScope.launch {
             _bookmarks.value = storageManager.loadBookmarks()
-            _settings.value = storageManager.loadSettings()
+            val loadedSettings = storageManager.loadSettings()
+            _settings.value = loadedSettings
+            if (loadedSettings.autoUpdateEnabled) {
+                checkForUpdates()
+            }
         }
     }
 
@@ -360,6 +373,32 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val newSettings = _settings.value.copy(stripTrackingParameters = enabled)
         _settings.value = newSettings
         storageManager.saveSettings(newSettings)
+    }
+
+    fun toggleAutoUpdate(enabled: Boolean) {
+        val newSettings = _settings.value.copy(autoUpdateEnabled = enabled)
+        _settings.value = newSettings
+        storageManager.saveSettings(newSettings)
+        if (enabled) {
+            checkForUpdates()
+        }
+    }
+
+    fun checkForUpdates() {
+        _updateState.value = _updateState.value.copy(
+            status = UpdateStatus.Checking,
+            message = "Checking for updates..."
+        )
+        viewModelScope.launch {
+            _updateState.value = UpdateChecker.check(BuildConfig.VERSION_NAME)
+        }
+    }
+
+    fun openUpdateRelease() {
+        val url = _updateState.value.releaseUrl
+            ?: "https://github.com/SketchyLucian/titan-browser/releases/latest"
+        openNewTab(url)
+        _isSettingsVisible.value = false
     }
 
 

@@ -26,8 +26,12 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -50,6 +54,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.titan.browser.model.BrowserSettings
 import com.titan.browser.model.SearchEngine
+import com.titan.browser.model.UpdateState
+import com.titan.browser.model.UpdateStatus
 import com.titan.browser.ui.theme.TitanAccentRed
 import com.titan.browser.ui.theme.TitanBackground
 import com.titan.browser.ui.theme.TitanBorder
@@ -62,6 +68,7 @@ import com.titan.browser.ui.theme.TitanTextSecondary
 @Composable
 fun SettingsScreen(
     settings: BrowserSettings,
+    updateState: UpdateState,
     onUpdateSearchEngine: (String) -> Unit,
     onToggleDarkTheme: (Boolean) -> Unit,
     onToggleAdblock: (Boolean) -> Unit,
@@ -69,6 +76,9 @@ fun SettingsScreen(
     onToggleCosmeticFiltering: (Boolean) -> Unit,
     onToggleBlockPopups: (Boolean) -> Unit,
     onToggleStripTrackingParameters: (Boolean) -> Unit,
+    onToggleAutoUpdate: (Boolean) -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onOpenUpdate: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -371,6 +381,81 @@ fun SettingsScreen(
                 )
             }
 
+            // Automatic Updates
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    tint = TitanTextSecondary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Automatic update checks",
+                        color = TitanTextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Current ${updateState.currentVersion} • ${updateState.message}",
+                        color = when (updateState.status) {
+                            UpdateStatus.UpdateAvailable -> TitanPrimary
+                            UpdateStatus.Error -> TitanAccentRed
+                            else -> TitanTextSecondary
+                        },
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Button(
+                            onClick = onCheckForUpdates,
+                            enabled = updateState.status != UpdateStatus.Checking,
+                            colors = ButtonDefaults.buttonColors(containerColor = TitanSurfaceVariant)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (updateState.status == UpdateStatus.Checking) "Checking" else "Check"
+                            )
+                        }
+                        if (!updateState.releaseUrl.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = onOpenUpdate,
+                                colors = ButtonDefaults.buttonColors(containerColor = TitanPrimary)
+                            ) {
+                                Text(
+                                    text = if (updateState.status == UpdateStatus.UpdateAvailable) {
+                                        "Get update"
+                                    } else {
+                                        "Release notes"
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+                Switch(
+                    checked = settings.autoUpdateEnabled,
+                    onCheckedChange = { onToggleAutoUpdate(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = TitanPrimary,
+                        checkedTrackColor = TitanSurfaceVariant,
+                        uncheckedTrackColor = TitanBorder
+                    )
+                )
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             // Section: Privacy & Data
@@ -449,7 +534,7 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "Version 0.2.0 • High-performance modern web browser",
+                        text = "Version ${updateState.currentVersion} • High-performance modern web browser",
                         color = TitanTextSecondary,
                         fontSize = 13.sp
                     )

@@ -16,6 +16,6 @@ data class BrowserSettings(
     val cosmeticFiltering: Boolean = true,
     val blockPopups: Boolean = true,
     val aggressiveMode: Boolean = false,
-    val stripTrackingParameters: Boolean = true
+    val stripTrackingParameters: Boolean = true,
+    val autoUpdateEnabled: Boolean = true
 )
-
