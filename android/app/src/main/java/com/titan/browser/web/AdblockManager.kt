@@ -27,6 +27,7 @@ object AdblockManager {
         val raw: String,
         val isException: Boolean,
         val networkPattern: String? = null,
+        val networkRegex: Regex? = null,
         val cosmeticDomains: List<String> = emptyList(),
         val cosmeticSelector: String? = null,
         val options: Set<String> = emptySet()
@@ -125,6 +126,30 @@ object AdblockManager {
         LIST_TURTLECUTE_TEST to turtlecuteTestRules()
     )
 
+    private val knownAdOrTrackerHosts = setOf(
+        "googletagmanager.com",
+        "google-analytics.com",
+        "analytics.google.com",
+        "pagead2.googlesyndication.com",
+        "googlesyndication.com",
+        "googleadservices.com",
+        "an.yandex.ru",
+        "mc.yandex.ru",
+        "static.hotjar.com",
+        "hotjar.com",
+        "browser.sentry-cdn.com",
+        "js.sentry-cdn.com",
+        "sentry-cdn.com",
+        "bugsnag.com",
+        "d2wy8f7a9ursnm.cloudfront.net",
+        "ymatuhin.ru",
+        "tagivi.com",
+        "fellowearnwave.com",
+        "sharethis.com",
+        "t.sharethis.com",
+        "static.cloudflareinsights.com"
+    )
+
     private val remoteListRules = mutableMapOf<String, List<String>>()
     private val parsedCache = mutableMapOf<String, List<ParsedRule>>()
     private val injectionScriptCache = object : LinkedHashMap<InjectionScriptKey, String>(8, 0.75f, true) {
@@ -138,6 +163,7 @@ object AdblockManager {
     @Volatile
     private var injectionScriptTemplate: String? = null
 
+    @Volatile
     private var rulesGeneration = 0L
 
     fun initializeInjectionScriptTemplate(template: String) {
@@ -247,38 +273,49 @@ object AdblockManager {
         settings: BrowserSettings,
         sourceUrl: String? = null,
         requestType: String = "other"
+    ): Boolean = isBlockedRequest(
+        url = url,
+        requestHost = parseHost(url),
+        settings = settings,
+        sourceHost = sourceUrl?.let(::parseHost).orEmpty(),
+        requestType = requestType
+    )
+
+    internal fun isBlockedRequest(
+        url: String,
+        requestHost: String,
+        settings: BrowserSettings,
+        sourceHost: String = "",
+        requestType: String = "other"
     ): Boolean {
         if (!settings.adblockEnabled || url.isBlank() || isBypassedUrl(url)) return false
 
-        val sourceHost = sourceUrl
-            ?.takeIf { it.isNotBlank() }
-            ?.let(::parseHost)
-            .orEmpty()
-        val requestHost = parseHost(url)
-        if (requestHost.isBlank() || isBenchmarkOrLocalHost(requestHost)) return false
+        val normalizedRequestHost = requestHost.lowercase()
+        val normalizedSourceHost = sourceHost.lowercase()
+        if (normalizedRequestHost.isBlank() || isBenchmarkOrLocalHost(normalizedRequestHost)) return false
 
-        if (isWhitelisted(sourceHost.ifBlank { requestHost }, settings.adblockWhitelistedDomains)) {
+        if (isWhitelisted(normalizedSourceHost.ifBlank { normalizedRequestHost }, settings.adblockWhitelistedDomains)) {
             return false
         }
-        if (isWhitelisted(requestHost, settings.adblockWhitelistedDomains)) {
+        if (isWhitelisted(normalizedRequestHost, settings.adblockWhitelistedDomains)) {
             return false
         }
 
         val rules = activeRuleSet(settings)
-        if (rules.exceptionHosts.matchesHost(requestHost) || rules.complexExceptionRules.any {
-                it.matchesNetwork(url, requestHost, sourceHost, requestType)
+        if (rules.exceptionHosts.matchesHost(normalizedRequestHost) || rules.complexExceptionRules.any {
+                it.matchesNetwork(url, normalizedRequestHost, normalizedSourceHost, requestType)
             }
         ) {
             return false
         }
 
-        if (isKnownAdOrTrackerUrl(url, requestHost, sourceHost, requestType)) return true
+        if (isKnownAdOrTrackerUrl(url, normalizedRequestHost, normalizedSourceHost, requestType)) return true
 
-        val blockedByFilter = rules.blockingHosts.matchesHost(requestHost) ||
-            rules.complexBlockingRules.any { it.matchesNetwork(url, requestHost, sourceHost, requestType) }
+        val blockedByFilter = rules.blockingHosts.matchesHost(normalizedRequestHost) ||
+            rules.complexBlockingRules.any {
+                it.matchesNetwork(url, normalizedRequestHost, normalizedSourceHost, requestType)
+            }
         if (blockedByFilter) return true
-
-        if (settings.adblockBlockedDomains.any { matchesDomain(requestHost, it) }) return true
 
         if (settings.aggressiveMode) {
             val lower = url.lowercase()
@@ -350,11 +387,14 @@ object AdblockManager {
     )
 
     private fun activeRuleSet(settings: BrowserSettings): ActiveRuleSet {
-        val key = synchronized(this) { ruleSetKey(settings, rulesGeneration) }
-        activeRuleSetCache?.takeIf { it.key == key }?.let { return it }
+        val generation = rulesGeneration
+        activeRuleSetCache?.takeIf { it.matches(settings, generation) }?.let { return it }
 
         return synchronized(this) {
-            activeRuleSetCache?.takeIf { it.key == key }?.let { return@synchronized it }
+            val currentGeneration = rulesGeneration
+            activeRuleSetCache?.takeIf { it.matches(settings, currentGeneration) }
+                ?.let { return@synchronized it }
+            val key = ruleSetKey(settings, currentGeneration)
 
             val parsedRules = buildList {
                 key.filterLists.forEach { id ->
@@ -427,15 +467,20 @@ object AdblockManager {
 
     private fun preparedActiveRuleSet(settings: BrowserSettings): ActiveRuleSet? {
         val cached = activeRuleSetCache ?: return null
-        val key = synchronized(this) { ruleSetKey(settings, rulesGeneration) }
-        return cached.takeIf { it.key == key }
+        return cached.takeIf { it.matches(settings, rulesGeneration) }
     }
+
+    private fun ActiveRuleSet.matches(settings: BrowserSettings, generation: Long): Boolean =
+        key.generation == generation &&
+            key.filterLists == settings.adblockFilterLists &&
+            key.customRules == settings.adblockCustomRules &&
+            key.blockedDomains == settings.adblockBlockedDomains
 
     private fun ruleSetKey(settings: BrowserSettings, generation: Long) = RuleSetKey(
         generation = generation,
-        filterLists = settings.adblockFilterLists.toList(),
-        customRules = settings.adblockCustomRules.toList(),
-        blockedDomains = settings.adblockBlockedDomains.toList()
+        filterLists = settings.adblockFilterLists,
+        customRules = settings.adblockCustomRules,
+        blockedDomains = settings.adblockBlockedDomains
     )
 
     private fun effectiveRules(id: String): List<String> =
@@ -466,7 +511,20 @@ object AdblockManager {
 
         if (hasUnsupportedNetworkOptions(options)) return null
         if (options.contains("redirect-rule")) return null
-        return ParsedRule(raw, isException, networkPattern = patternAndOptions.first().trim(), options = options)
+        val networkPattern = patternAndOptions.first().trim()
+        val regexPattern = when {
+            networkPattern.startsWith("||") && '/' in networkPattern ->
+                networkPattern.substring(networkPattern.indexOf('/')).trimEnd('^')
+            '*' in networkPattern -> networkPattern
+            else -> null
+        }
+        return ParsedRule(
+            raw = raw,
+            isException = isException,
+            networkPattern = networkPattern,
+            networkRegex = regexPattern?.let(::wildcardToRegex),
+            options = options
+        )
     }
 
     private fun isUnsupportedCosmeticSelector(selector: String): Boolean {
@@ -525,13 +583,12 @@ object AdblockManager {
                     false
                 } else {
                     val pathStart = hostAndPathPattern.indexOf('/')
-                    pathStart < 0 || wildcardToRegex(hostAndPathPattern.substring(pathStart).trimEnd('^'))
-                        .containsMatchIn(lowerUrl)
+                    pathStart < 0 || networkRegex?.containsMatchIn(lowerUrl) == true
                 }
             }
             pattern.startsWith("|") -> lowerUrl.startsWith(pattern.removePrefix("|").lowercase())
             pattern.startsWith("/") || pattern.startsWith("&") -> lowerUrl.contains(pattern.lowercase())
-            pattern.contains("*") -> wildcardToRegex(pattern).containsMatchIn(lowerUrl)
+            pattern.contains("*") -> networkRegex?.containsMatchIn(lowerUrl) == true
             else -> lowerUrl.contains(pattern.trim('^').lowercase())
         }
     }
@@ -643,16 +700,15 @@ object AdblockManager {
     }
 
     private fun isBypassedUrl(url: String): Boolean {
-        val lower = url.lowercase()
-        return lower.startsWith("data:") ||
-            lower.startsWith("blob:") ||
-            lower.startsWith("about:") ||
-            lower.startsWith("file:") ||
-            lower.startsWith("titan:") ||
-            lower.startsWith("chrome:") ||
-            lower.startsWith("ws:") ||
-            lower.startsWith("wss:") ||
-            lower.startsWith("javascript:")
+        return url.startsWith("data:", ignoreCase = true) ||
+            url.startsWith("blob:", ignoreCase = true) ||
+            url.startsWith("about:", ignoreCase = true) ||
+            url.startsWith("file:", ignoreCase = true) ||
+            url.startsWith("titan:", ignoreCase = true) ||
+            url.startsWith("chrome:", ignoreCase = true) ||
+            url.startsWith("ws:", ignoreCase = true) ||
+            url.startsWith("wss:", ignoreCase = true) ||
+            url.startsWith("javascript:", ignoreCase = true)
     }
 
     private fun isBenchmarkOrLocalHost(host: String): Boolean =
@@ -670,32 +726,9 @@ object AdblockManager {
         sourceHost: String,
         requestType: String
     ): Boolean {
-        val lower = url.lowercase()
-        val knownHosts = setOf(
-            "googletagmanager.com",
-            "google-analytics.com",
-            "analytics.google.com",
-            "pagead2.googlesyndication.com",
-            "googlesyndication.com",
-            "googleadservices.com",
-            "an.yandex.ru",
-            "mc.yandex.ru",
-            "static.hotjar.com",
-            "hotjar.com",
-            "browser.sentry-cdn.com",
-            "js.sentry-cdn.com",
-            "sentry-cdn.com",
-            "bugsnag.com",
-            "d2wy8f7a9ursnm.cloudfront.net",
-            "ymatuhin.ru",
-            "tagivi.com",
-            "fellowearnwave.com",
-            "sharethis.com",
-            "t.sharethis.com",
-            "static.cloudflareinsights.com"
-        )
-        if (knownHosts.any { matchesDomain(host, it) }) return true
+        if (knownAdOrTrackerHosts.matchesHost(host)) return true
 
+        val lower = url.lowercase()
         val isThirdParty = sourceHost.isNotBlank() && !matchesDomain(host, sourceHost)
         val normalizedRequestType = requestType.normalizedRequestType()
         val isDocument = normalizedRequestType == "document"

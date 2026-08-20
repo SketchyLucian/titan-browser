@@ -15,10 +15,6 @@ class MainActivity : ComponentActivity() {
     private val viewModel: BrowserViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        try {
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)
-        } catch (_: Exception) {
-        }
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
@@ -29,6 +25,21 @@ class MainActivity : ComponentActivity() {
                 BrowserScreen(viewModel = viewModel)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.onHostResume()
+    }
+
+    override fun onPause() {
+        viewModel.onHostPause()
+        super.onPause()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        viewModel.onTrimMemory(level)
     }
 
     override fun onNewIntent(intent: Intent) {

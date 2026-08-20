@@ -8,12 +8,16 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
+import com.titan.browser.BuildConfig
 import com.titan.browser.model.BrowserSettings
+import java.util.concurrent.atomic.AtomicBoolean
 
 object TitanWebViewFactory {
 
     private const val DESKTOP_USER_AGENT =
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+    private val androidUserAgentSection = Regex("\\(Linux; Android [^)]*\\)")
+    private val debuggingConfigured = AtomicBoolean(false)
 
     @Suppress("DEPRECATION")
     @SuppressLint("SetJavaScriptEnabled")
@@ -31,14 +35,10 @@ object TitanWebViewFactory {
         settings.databaseEnabled = browserSettings.domStorageEnabled
         settings.cacheMode = WebSettings.LOAD_DEFAULT
 
-        // 2. Hardware Acceleration & Direct Window Compositing
-        // Disable offscreenPreRaster to prevent raster worker thread CPU contention during rapid DOM updates
+        // 2. Hardware acceleration and direct window compositing
         settings.offscreenPreRaster = false
-        // Avoid View.LAYER_TYPE_HARDWARE which creates an extra offscreen buffer copy;
-        // WebView is already accelerated directly by the window's hardware canvas.
         webView.setLayerType(View.LAYER_TYPE_NONE, null)
         webView.isNestedScrollingEnabled = false
-        webView.keepScreenOn = true
         webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true)
 
         // 3. Viewport, Rendering Pipeline & Latency Minimization
@@ -55,14 +55,15 @@ object TitanWebViewFactory {
         settings.setNeedInitialFocus(false)
         settings.setSupportMultipleWindows(false)
 
-        // 4. SafeBrowsing & Security Check Bypass for Unthrottled Frame Transitions
+        // 4. Keep provider-backed Safe Browsing enabled.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
-            WebSettingsCompat.setSafeBrowsingEnabled(settings, false)
+            WebSettingsCompat.setSafeBrowsingEnabled(settings, true)
         }
 
         // 5. Cookie Manager Setup
-        CookieManager.getInstance().setAcceptCookie(browserSettings.cookiesEnabled)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(browserSettings.cookiesEnabled)
+        cookieManager.setAcceptThirdPartyCookies(
             webView,
             browserSettings.cookiesEnabled && !browserSettings.blockThirdPartyCookies
         )
@@ -72,7 +73,7 @@ object TitanWebViewFactory {
             settings.userAgentString = DESKTOP_USER_AGENT
         } else if (browserSettings.reduceFingerprinting) {
             settings.userAgentString = WebSettings.getDefaultUserAgent(webView.context)
-                .replace(Regex("\\(Linux; Android [^)]*\\)"), "(Linux; Android 10; K; wv)")
+                .replace(androidUserAgentSection, "(Linux; Android 10; K; wv)")
         } else {
             settings.userAgentString = null // Default mobile UA
         }
@@ -95,6 +96,9 @@ object TitanWebViewFactory {
         browserSettings: BrowserSettings = BrowserSettings()
     ): WebView {
         return WebView(context).apply {
+            if (BuildConfig.DEBUG && debuggingConfigured.compareAndSet(false, true)) {
+                WebView.setWebContentsDebuggingEnabled(true)
+            }
             configureSettings(this, browserSettings)
         }
     }

@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
@@ -23,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.titan.browser.model.Tab
 import com.titan.browser.ui.components.BookmarksSheet
 import com.titan.browser.ui.components.BottomToolbar
@@ -38,17 +38,17 @@ fun BrowserScreen(
     viewModel: BrowserViewModel,
     modifier: Modifier = Modifier
 ) {
-    val tabs by viewModel.tabs.collectAsState()
-    val activeTabId by viewModel.activeTabId.collectAsState()
-    val bookmarks by viewModel.bookmarks.collectAsState()
-    val settings by viewModel.settings.collectAsState()
-    val updateState by viewModel.updateState.collectAsState()
+    val tabs by viewModel.tabs.collectAsStateWithLifecycle()
+    val activeTabId by viewModel.activeTabId.collectAsStateWithLifecycle()
+    val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val updateState by viewModel.updateState.collectAsStateWithLifecycle()
 
-    val isTabGridVisible by viewModel.isTabGridVisible.collectAsState()
-    val isBookmarksVisible by viewModel.isBookmarksVisible.collectAsState()
-    val isSettingsVisible by viewModel.isSettingsVisible.collectAsState()
-    val isFindInPageVisible by viewModel.isFindInPageVisible.collectAsState()
-    val fullscreenView by viewModel.customFullscreenView.collectAsState()
+    val isTabGridVisible by viewModel.isTabGridVisible.collectAsStateWithLifecycle()
+    val isBookmarksVisible by viewModel.isBookmarksVisible.collectAsStateWithLifecycle()
+    val isSettingsVisible by viewModel.isSettingsVisible.collectAsStateWithLifecycle()
+    val isFindInPageVisible by viewModel.isFindInPageVisible.collectAsStateWithLifecycle()
+    val fullscreenView by viewModel.customFullscreenView.collectAsStateWithLifecycle()
 
     val activeTab = tabs.firstOrNull { it.id == activeTabId }
 
@@ -257,9 +257,9 @@ private fun BrowserToolbar(
     canShow: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val loadingProgress by viewModel.loadingProgress.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val isToolbarVisible by viewModel.isToolbarVisible.collectAsState()
+    val loadingProgress by viewModel.loadingProgress.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val isToolbarVisible by viewModel.isToolbarVisible.collectAsStateWithLifecycle()
 
     AnimatedVisibility(
         visible = canShow && isToolbarVisible,
@@ -286,11 +286,10 @@ private fun BrowserMenuHost(
     activeTab: Tab?,
     isBookmarked: Boolean
 ) {
-    val isMenuVisible by viewModel.isMenuVisible.collectAsState()
-    if (!isMenuVisible) return
-
+    val isMenuVisible by viewModel.isMenuVisible.collectAsStateWithLifecycle()
     val context = LocalContext.current
     MenuBottomSheet(
+        visible = isMenuVisible,
         canGoBack = activeTab?.canGoBack ?: false,
         canGoForward = activeTab?.canGoForward ?: false,
         isBookmarked = isBookmarked,
