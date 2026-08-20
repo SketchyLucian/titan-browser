@@ -23,7 +23,10 @@ val buildWebScripts by tasks.registering(Exec::class) {
 
 val syncAndroidWebScript by tasks.registering(Sync::class) {
     dependsOn(buildWebScripts)
-    from(repositoryRoot.resolve("web-scripts/dist/android-adblock.js"))
+    from(
+        repositoryRoot.resolve("web-scripts/dist/android-adblock.js"),
+        repositoryRoot.resolve("web-scripts/dist/android-privacy.js")
+    )
     into(generatedWebAssets)
 }
 

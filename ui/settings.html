@@ -1129,7 +1129,7 @@
             <button class="btn-secondary-sm" id="updateOpenBtn" style="display: none;">Get Update</button>
             <button class="btn-secondary-sm" id="updateCheckBtn">Check Now</button>
             <label class="switch">
-              <input type="checkbox" id="autoUpdateToggle" checked />
+              <input type="checkbox" id="autoUpdateToggle" />
               <span class="slider"></span>
             </label>
           </div>
@@ -1368,7 +1368,7 @@
 
     <!-- VIEW 3: Privacy & Security -->
     <div class="tab-view" id="viewPrivacy">
-      <!-- Hero Card: Zero Telemetry Verification -->
+      <!-- Hero Card: Core privacy status -->
       <div class="privacy-hero-card">
         <div class="privacy-hero-header">
           <div class="privacy-hero-icon">
@@ -1378,15 +1378,15 @@
             </svg>
           </div>
           <div>
-            <div class="privacy-hero-title">Zero-Telemetry Core Active</div>
-            <div class="privacy-hero-desc">Titan Browser is built with a strictly verified, telemetry-free architecture. No usage metrics, diagnostic pings, or browsing history are ever transmitted.</div>
+            <div class="privacy-hero-title">Core privacy protections are active</div>
+            <div class="privacy-hero-desc">Titan does not include an analytics SDK. WebView2 background reporting is disabled, and a socket-level rule set blocks known telemetry hosts.</div>
           </div>
         </div>
         <div class="privacy-badges-row">
-          <span class="privacy-badge"><span class="privacy-badge-dot"></span>0 Pings / Sec</span>
-          <span class="privacy-badge"><span class="privacy-badge-dot"></span>No Remote Crash Reporting</span>
-          <span class="privacy-badge"><span class="privacy-badge-dot"></span>100% Local Storage</span>
-          <span class="privacy-badge"><span class="privacy-badge-dot"></span>Zero Analytics SDKs</span>
+          <span class="privacy-badge"><span class="privacy-badge-dot"></span>Hyperlink Pings Off</span>
+          <span class="privacy-badge"><span class="privacy-badge-dot"></span>Crash Uploads Off</span>
+          <span class="privacy-badge"><span class="privacy-badge-dot"></span>Local Settings</span>
+          <span class="privacy-badge"><span class="privacy-badge-dot"></span>No Analytics SDK</span>
         </div>
       </div>
 
@@ -1396,7 +1396,7 @@
           <svg viewBox="0 0 24 24" width="18" height="18" stroke="var(--accent-primary)" stroke-width="2" fill="none">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
           </svg>
-          <h2 class="section-title">Anti-Tracking &amp; Surveillance Defense</h2>
+          <h2 class="section-title">Tracking Protection</h2>
         </div>
 
         <div class="setting-card">
@@ -1427,8 +1427,8 @@
               </svg>
             </div>
             <div>
-              <div class="setting-title">Do Not Track (DNT) Universal Header</div>
-              <div class="setting-desc">Emits standard DNT: 1 flags across web requests and JavaScript runtime to disable tracking scripts.</div>
+              <div class="setting-title">Do Not Track (DNT)</div>
+              <div class="setting-desc">Exposes DNT: 1 to page scripts. A site can choose whether to honor this signal.</div>
             </div>
           </div>
           <label class="switch">
@@ -1465,7 +1465,7 @@
             </div>
             <div>
               <div class="setting-title">Block Hyperlink Auditing (Ping Tracking)</div>
-              <div class="setting-desc">Strips HTML ping attributes from links and blocks stealthy background telemetry beacons.</div>
+              <div class="setting-desc">Removes hidden ping targets from links before you open them.</div>
             </div>
           </div>
           <label class="switch">
@@ -1496,8 +1496,8 @@
               </svg>
             </div>
             <div>
-              <div class="setting-title">Canvas &amp; Audio Fingerprint Resistance</div>
-              <div class="setting-desc">Adds randomized cryptographic noise to 2D Canvas and WebAudio reads to prevent unique hardware hashing.</div>
+              <div class="setting-title">Reduce Device Fingerprinting</div>
+              <div class="setting-desc">Reports common hardware concurrency and memory values instead of exact device values.</div>
             </div>
           </div>
           <label class="switch">
@@ -1516,8 +1516,8 @@
               </svg>
             </div>
             <div>
-              <div class="setting-title">WebRTC IP Leak Protection</div>
-              <div class="setting-desc">Restricts WebRTC ICE host candidate sharing to prevent real IP exposure through VPNs or NAT.</div>
+              <div class="setting-title">Block WebRTC</div>
+              <div class="setting-desc">Stops peer connections that can reveal network addresses.</div>
             </div>
           </div>
           <label class="switch">
@@ -1535,14 +1535,11 @@
               </svg>
             </div>
             <div>
-              <div class="setting-title">Strict Zero-Telemetry Enforcement</div>
-              <div class="setting-desc">Ensures 0 telemetry, crash logging, or diagnostic data is ever gathered or transmitted by Titan.</div>
+              <div class="setting-title">Telemetry Request Firewall</div>
+              <div class="setting-desc">Blocks built-in reporting and known analytics, diagnostics, and crash-reporting hosts at the socket and page levels.</div>
             </div>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="telemetryToggle" checked />
-            <span class="slider"></span>
-          </label>
+          <span class="privacy-badge"><span class="privacy-badge-dot"></span>Always On</span>
         </div>
       </div>
 
@@ -1564,7 +1561,7 @@
           </div>
           <div class="activity-log-container" id="blockedActivityLogList">
             <div class="rules-empty-state">
-              No tracking or telemetry requests detected in this session. Browsing is completely clean.
+              No blocked tracker requests are recorded for this session.
             </div>
           </div>
         </div>
@@ -1614,6 +1611,7 @@
           <div class="rules-toolbar">
             <input
               type="text"
+              id="blockedRulesSearch"
               class="rules-input"
               style="padding: 6px 12px; font-size: 12px;"
               placeholder="Filter active rules..."
@@ -1626,20 +1624,20 @@
         </div>
       </div>
 
-      <!-- Section 5: Whitelist Exceptions -->
+      <!-- Section 5: Custom-rule exceptions -->
       <div class="settings-section">
         <div class="section-title-row">
           <svg viewBox="0 0 24 24" width="18" height="18" stroke="var(--accent-primary)" stroke-width="2" fill="none">
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
             <polyline points="22 4 12 14.01 9 11.01"></polyline>
           </svg>
-          <h2 class="section-title">Whitelist &amp; Exemption Rules</h2>
+          <h2 class="section-title">Custom Rule Exceptions</h2>
         </div>
 
         <div class="rules-section-card">
           <div class="rules-header-row">
             <div class="rules-title-group">
-              <span class="setting-title" style="margin: 0;">Allowed Domain Exceptions</span>
+              <span class="setting-title" style="margin: 0;">Allowed Custom Domains</span>
               <span class="rules-badge" id="whitelistRulesCount">0 exceptions</span>
             </div>
           </div>
@@ -1649,14 +1647,14 @@
               type="text"
               id="newWhitelistDomainInput"
               class="rules-input"
-              placeholder="e.g. trusted-service.internal"
+              placeholder="Exception for a custom rule"
             />
             <button class="btn-primary-sm" id="addWhitelistedDomainBtn" style="background: #10b981;">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
-              Allow Domain
+              Add Exception
             </button>
           </div>
 
@@ -1686,7 +1684,7 @@
             </div>
             <div>
               <div class="setting-title">Clear Browsing Data &amp; Storage</div>
-              <div class="setting-desc">Instantly purges all cached resources, session cookies, and local web storage across all open tabs.</div>
+              <div class="setting-desc">Deletes cached resources, cookies, and local web storage from open tabs.</div>
               <div id="clearDataStatus" class="privacy-status-banner" style="display: none;"></div>
             </div>
           </div>

@@ -5,6 +5,7 @@ import android.view.View
 import android.webkit.GeolocationPermissions
 import android.webkit.JsPromptResult
 import android.webkit.JsResult
+import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 
@@ -87,8 +88,11 @@ class TitanWebChromeClient(
         origin: String?,
         callback: GeolocationPermissions.Callback?
     ) {
-        // Allow geolocation if granted by app permissions
-        callback?.invoke(origin, true, false)
+        callback?.invoke(origin, false, false)
+    }
+
+    override fun onPermissionRequest(request: PermissionRequest?) {
+        request?.deny()
     }
 
     private fun isScamDialog(message: String?): Boolean {

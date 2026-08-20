@@ -53,7 +53,7 @@
       if (isThemes) {
         headerSubtitle.textContent = 'Customize browser themes, accent highlights, and web page contrast';
       } else if (isPrivacy) {
-        headerSubtitle.textContent = 'Zero-telemetry controls, anti-fingerprinting shields, and tracking protection';
+        headerSubtitle.textContent = 'Tracker blocking, privacy signals, fingerprinting controls, and local data';
       } else if (isAdblock) {
         headerSubtitle.textContent = 'Shield controls, video ad auto-skip, popup defense, and custom domain filters';
       } else {
@@ -233,9 +233,6 @@
       const auditingToggle = document.getElementById('auditingToggle') as HTMLInputElement | null;
       if (auditingToggle) auditingToggle.checked = state.settings.block_hyperlink_auditing !== false;
 
-      const telemetryToggle = document.getElementById('telemetryToggle') as HTMLInputElement | null;
-      if (telemetryToggle) telemetryToggle.checked = state.settings.telemetry_disabled !== false;
-
       // AdBlock Settings
       const adblockToggle = document.getElementById('adblockToggle') as HTMLInputElement | null;
       if (adblockToggle) adblockToggle.checked = state.settings.adblock_enabled !== false;
@@ -352,7 +349,6 @@
       { id: 'webrtcToggle', key: 'block_webrtc_leak' },
       { id: 'fingerprintToggle', key: 'block_fingerprinting' },
       { id: 'auditingToggle', key: 'block_hyperlink_auditing' },
-      { id: 'telemetryToggle', key: 'telemetry_disabled' },
     ];
 
     privacyKeys.forEach(({ id, key }) => {
@@ -444,17 +440,31 @@
 
   // Privacy Blocklist & Whitelist Management
   let currentBlockedDomains: string[] = [];
+  let mandatoryBlockedDomains: string[] = [];
   let currentWhitelistedDomains: string[] = [];
   let currentBlockedLogs: BlockedRequestLog[] = [];
   let currentRuleFilter: string = '';
 
 
   function cleanDomainInput(val: string): string {
-    return val
-      .trim()
-      .toLowerCase()
-      .replace(/^https?:\/\//, '')
-      .replace(/\/.*$/, '');
+    const candidate = val.trim();
+    if (!candidate) return '';
+    try {
+      const parsed = new URL(/^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`);
+      const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+      return /^[a-z0-9.-]+$/.test(host) ? host : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function escapeHtml(value: unknown): string {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function getDomainCategory(d: string): { label: string; color: string } {
@@ -498,20 +508,23 @@
     listEl.innerHTML = filtered
       .map((domain) => {
         const cat = getDomainCategory(domain);
+        const isMandatory = mandatoryBlockedDomains.includes(domain);
         return `
           <div class="rule-item">
             <div class="rule-item-left">
               <span class="rule-cat-badge" style="background: ${cat.color}22; color: ${cat.color}; border: 1px solid ${cat.color}44;">
                 ${cat.label}
               </span>
-              <span class="rule-domain-text">${domain}</span>
+              <span class="rule-domain-text">${escapeHtml(domain)}</span>
             </div>
-            <button class="rule-delete-btn" data-settings-action="remove-blocked-domain" data-value="${encodeURIComponent(domain)}" title="Remove rule">
-              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
+            ${isMandatory ? '<span class="rules-badge">Built-in</span>' : `
+              <button class="rule-delete-btn" data-settings-action="remove-blocked-domain" data-value="${encodeURIComponent(domain)}" title="Remove rule">
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            `}
           </div>
         `;
       })
@@ -530,7 +543,7 @@
     if (currentWhitelistedDomains.length === 0) {
       listEl.innerHTML = `
         <div class="rules-empty-state">
-          No whitelist exceptions configured. All blocklist rules apply universally.
+          No custom exceptions are configured. Built-in telemetry firewall rules always apply.
         </div>
       `;
       return;
@@ -544,7 +557,7 @@
               <span class="rule-cat-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">
                 Allowed
               </span>
-              <span class="rule-domain-text">${domain}</span>
+              <span class="rule-domain-text">${escapeHtml(domain)}</span>
             </div>
             <button class="rule-delete-btn" data-settings-action="remove-whitelisted-domain" data-value="${encodeURIComponent(domain)}" title="Remove whitelist exception">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
@@ -570,7 +583,7 @@
     if (currentBlockedLogs.length === 0) {
       logListEl.innerHTML = `
         <div class="rules-empty-state">
-          No tracking or telemetry requests detected in this session. Browsing is completely clean.
+          No blocked tracker requests are recorded for this session.
         </div>
       `;
       return;
@@ -579,14 +592,18 @@
     logListEl.innerHTML = currentBlockedLogs
       .slice(0, 30)
       .map((log) => {
+        const safeType = escapeHtml(log.req_type.toUpperCase());
+        const safeDomain = escapeHtml(log.domain);
+        const safeTimestamp = escapeHtml(log.timestamp);
+        const safeUrl = escapeHtml(log.url);
         return `
           <div class="log-item">
             <div class="log-item-header">
-              <span class="log-badge-type">${log.req_type.toUpperCase()}</span>
-              <span class="log-domain-match">${log.domain}</span>
-              <span class="log-timestamp">${log.timestamp}</span>
+              <span class="log-badge-type">${safeType}</span>
+              <span class="log-domain-match">${safeDomain}</span>
+              <span class="log-timestamp">${safeTimestamp}</span>
             </div>
-            <div class="log-url-text" title="${log.url}">${log.url}</div>
+            <div class="log-url-text" title="${safeUrl}">${safeUrl}</div>
           </div>
         `;
       })
@@ -641,14 +658,16 @@
 
     container.innerHTML = currentFilterLists
       .map((list) => {
+        const safeName = escapeHtml(list.name);
+        const safeDescription = escapeHtml(list.description);
         return `
           <div class="filter-list-item">
             <div class="filter-list-info">
               <div class="filter-list-name-row">
-                <span class="filter-list-name">${list.name}</span>
+                <span class="filter-list-name">${safeName}</span>
                 <span class="filter-list-count">${list.count.toLocaleString()} rules</span>
               </div>
-              <div class="filter-list-desc">${list.description}</div>
+              <div class="filter-list-desc">${safeDescription}</div>
             </div>
             <label class="switch" style="flex-shrink: 0;">
               <input type="checkbox" ${list.enabled ? 'checked' : ''} data-settings-action="toggle-filter-list" data-value="${encodeURIComponent(list.id)}" />
@@ -684,13 +703,14 @@
         const badgeLabel = isCosmetic ? 'Cosmetic CSS' : 'Network Rule';
         const badgeColor = isCosmetic ? '#f59e0b' : '#3b82f6';
         const safeRule = encodeURIComponent(rule);
+        const escapedRule = escapeHtml(rule);
         return `
           <div class="rule-item">
             <div class="rule-item-left">
               <span class="rule-cat-badge" style="background: ${badgeColor}22; color: ${badgeColor}; border: 1px solid ${badgeColor}44;">
                 ${badgeLabel}
               </span>
-              <span class="rule-domain-text" title="${rule}">${rule}</span>
+              <span class="rule-domain-text" title="${escapedRule}">${escapedRule}</span>
             </div>
             <button class="rule-delete-btn" data-settings-action="remove-custom-rule" data-value="${safeRule}" title="Remove rule">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
@@ -730,7 +750,7 @@
               <span class="rule-cat-badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3);">
                 Allowed
               </span>
-              <span class="rule-domain-text">${domain}</span>
+              <span class="rule-domain-text">${escapeHtml(domain)}</span>
             </div>
             <button class="rule-delete-btn" data-settings-action="remove-adblock-whitelist" data-value="${encodeURIComponent(domain)}" title="Remove whitelist exception">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
@@ -765,16 +785,20 @@
     logListEl.innerHTML = currentAdblockLogs
       .slice(0, 40)
       .map((log) => {
+        const safeType = escapeHtml(log.req_type.toUpperCase());
+        const safeDomain = escapeHtml(log.domain);
+        const safeTimestamp = escapeHtml(log.timestamp);
+        const safeUrl = escapeHtml(log.url);
         return `
           <div class="log-item">
             <div class="log-item-header">
               <span class="log-badge-type" style="background: rgba(78, 124, 246, 0.2); color: #60a5fa; border-color: rgba(78, 124, 246, 0.35);">
-                ${log.req_type.toUpperCase()}
+                ${safeType}
               </span>
-              <span class="log-domain-match">${log.domain}</span>
-              <span class="log-timestamp">${log.timestamp}</span>
+              <span class="log-domain-match">${safeDomain}</span>
+              <span class="log-timestamp">${safeTimestamp}</span>
             </div>
-            <div class="log-url-text" title="${log.url}">${log.url}</div>
+            <div class="log-url-text" title="${safeUrl}">${safeUrl}</div>
           </div>
         `;
       })
@@ -796,6 +820,7 @@
   }
 
   function removeBlockedDomain(domain: string) {
+    if (mandatoryBlockedDomains.includes(domain)) return;
     sendIpc({ type: 'RemoveBlockedDomain', domain });
     currentBlockedDomains = currentBlockedDomains.filter((d) => d !== domain);
     renderBlockedDomainsList();
@@ -916,6 +941,11 @@
     if (Array.isArray(state.adblock_filter_lists)) {
       currentFilterLists = [...state.adblock_filter_lists];
       renderFilterLists();
+    }
+
+    if (Array.isArray(state.mandatory_blocked_domains)) {
+      mandatoryBlockedDomains = [...state.mandatory_blocked_domains];
+      renderBlockedDomainsList();
     }
 
     if (Array.isArray(state.adblock_custom_rules)) {

@@ -79,6 +79,22 @@ impl StorageManager {
     pub fn load_settings(&self) -> BrowserSettings {
         if let Ok(data) = fs::read_to_string(&self.settings_file) {
             if let Ok(mut settings) = serde_json::from_str::<BrowserSettings>(&data) {
+                let mut settings_changed = false;
+                if settings.privacy_migration_version < 1 {
+                    settings.auto_update_enabled = false;
+                    settings.privacy_migration_version = 1;
+                    settings_changed = true;
+                }
+                if !settings.telemetry_disabled {
+                    settings_changed = true;
+                }
+                settings.telemetry_disabled = true;
+                for domain in crate::ipc::default_blocked_domains() {
+                    if !settings.blocked_domains.contains(&domain) {
+                        settings.blocked_domains.push(domain);
+                        settings_changed = true;
+                    }
+                }
                 if !settings
                     .adblock_filter_lists
                     .iter()
@@ -87,6 +103,10 @@ impl StorageManager {
                     settings
                         .adblock_filter_lists
                         .push("turtlecute_test".to_string());
+                    settings_changed = true;
+                }
+                if settings_changed {
+                    self.save_settings(&settings);
                 }
                 return settings;
             }

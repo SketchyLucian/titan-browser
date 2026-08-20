@@ -40,8 +40,10 @@ class TitanWebViewClient(
         if (url.startsWith("http://") || url.startsWith("https://") ||
             url.startsWith("about:") || url.startsWith("file://")
         ) {
-            if (url != rawUrl) {
-                view?.loadUrl(url)
+            if (request.isForMainFrame && request.method.equals("GET", ignoreCase = true) &&
+                (url != rawUrl || PrivacyManager.navigationHeaders(settings).isNotEmpty())
+            ) {
+                view?.loadUrl(url, PrivacyManager.navigationHeaders(settings))
                 return true
             }
             return false
@@ -66,7 +68,10 @@ class TitanWebViewClient(
             }
         }
 
-        private fun blockedResponse(requestType: String): WebResourceResponse {
+        private fun blockedResponse(
+            requestType: String,
+            protection: String = "Adblock"
+        ): WebResourceResponse {
             val isScriptLike = requestType == "script" || requestType == "subdocument"
             val statusCode = if (isScriptLike) 403 else 204
             val reasonPhrase = if (isScriptLike) "Forbidden" else "No Content"
@@ -80,7 +85,7 @@ class TitanWebViewClient(
                 mapOf(
                     "Cache-Control" to "no-store",
                     "Content-Length" to "0",
-                    "X-Titan-Adblock" to "1"
+                    "X-Titan-$protection" to "1"
                 ),
                 ByteArrayInputStream(ByteArray(0))
             )
@@ -92,8 +97,8 @@ class TitanWebViewClient(
         request: WebResourceRequest?
     ): WebResourceResponse? {
         val settings = settingsProvider()
-        if (!settings.adblockEnabled || request == null) {
-            return super.shouldInterceptRequest(view, request)
+        if (request == null) {
+            return null
         }
 
         val uri = request.url ?: return super.shouldInterceptRequest(view, request)
@@ -109,7 +114,10 @@ class TitanWebViewClient(
         val reqUrl = uri.toString()
         val pageUrl = request.requestHeaders["Referer"].orEmpty().ifBlank { currentPageUrl }
         val requestType = inferRequestType(reqUrl, request.isForMainFrame)
-        if (AdblockManager.isBlockedUrl(reqUrl, settings, pageUrl, requestType)) {
+        if (PrivacyManager.isBlockedTelemetryHost(host)) {
+            return blockedResponse(requestType, "Privacy")
+        }
+        if (settings.adblockEnabled && AdblockManager.isBlockedUrl(reqUrl, settings, pageUrl, requestType)) {
             return blockedResponse(requestType)
         }
 
@@ -122,6 +130,11 @@ class TitanWebViewClient(
             currentPageUrl = url
             onPageStartedCallback(url)
             val settings = settingsProvider()
+            if (view != null) {
+                PrivacyManager.getInjectionScript(settings).takeIf { it.isNotEmpty() }?.let { script ->
+                    view.evaluateJavascript(script, null)
+                }
+            }
             if (settings.adblockEnabled && view != null && !url.contains("browserbench") && !url.contains("speedometer")) {
                 val preparedScript = AdblockManager.getPreparedInjectionScript(settings, url)
                 if (preparedScript == null) {

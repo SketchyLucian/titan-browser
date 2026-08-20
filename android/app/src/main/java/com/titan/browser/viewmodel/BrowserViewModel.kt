@@ -3,7 +3,9 @@ package com.titan.browser.viewmodel
 import android.app.Application
 import android.graphics.Bitmap
 import android.view.View
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
+import android.webkit.WebStorage
 import android.webkit.WebView
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +20,7 @@ import com.titan.browser.update.UpdateChecker
 import com.titan.browser.BuildConfig
 import com.titan.browser.web.AdblockFilterUpdater
 import com.titan.browser.web.AdblockManager
+import com.titan.browser.web.PrivacyManager
 import com.titan.browser.web.TitanWebChromeClient
 import com.titan.browser.web.TitanWebViewClient
 import com.titan.browser.web.TitanWebViewFactory
@@ -105,7 +108,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 AdblockManager.setCachedFilterLists(cachedFilterLists)
                 AdblockManager.prepare(loadedSettings)
             }
-            if (loadedSettings.adblockEnabled) {
+            if (loadedSettings.adblockEnabled && loadedSettings.autoUpdateFilterLists) {
                 refreshAdblockFilterLists()
             }
             if (loadedSettings.autoUpdateEnabled) {
@@ -165,7 +168,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
 
         val webView = createConfiguredWebView(tabId)
-        webView.loadUrl(initialUrl)
+        webView.loadUrl(initialUrl, PrivacyManager.navigationHeaders(_settings.value))
 
         return Tab(
             id = tabId,
@@ -177,7 +180,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private fun createConfiguredWebView(tabId: String): WebView {
         val context = getApplication<Application>()
-        val webView = TitanWebViewFactory.createWebView(context)
+        val webView = TitanWebViewFactory.createWebView(context, _settings.value)
         webView.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
             if (_activeTabId.value == tabId) {
                 updateToolbarVisibilityForScroll(scrollY, oldScrollY)
@@ -333,7 +336,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 webView = webView
             )
         }
-        webView.loadUrl(url)
+        webView.loadUrl(url, PrivacyManager.navigationHeaders(_settings.value))
     }
 
 
@@ -369,6 +372,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         active.webView?.let {
             TitanWebViewFactory.configureSettings(
                 it,
+                browserSettings = _settings.value,
                 isDesktopMode = newMode,
                 isDarkTheme = _settings.value.darkTheme
             )
@@ -483,6 +487,45 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val newSettings = _settings.value.copy(stripTrackingParameters = enabled)
         _settings.value = newSettings
         storageManager.saveSettings(newSettings)
+    }
+
+    fun updatePrivacySettings(newSettings: BrowserSettings) {
+        _settings.value = newSettings
+        storageManager.saveSettings(newSettings)
+        val privacyScript = PrivacyManager.getInjectionScript(newSettings)
+        _tabs.value.forEach { tab ->
+            tab.webView?.let { webView ->
+                TitanWebViewFactory.configureSettings(
+                    webView,
+                    browserSettings = newSettings,
+                    isDesktopMode = tab.isDesktopMode,
+                    isDarkTheme = newSettings.darkTheme
+                )
+                if (privacyScript.isNotEmpty()) {
+                    webView.evaluateJavascript(privacyScript, null)
+                }
+            }
+        }
+    }
+
+    fun toggleAutoUpdateFilterLists(enabled: Boolean) {
+        val newSettings = _settings.value.copy(autoUpdateFilterLists = enabled)
+        _settings.value = newSettings
+        storageManager.saveSettings(newSettings)
+        if (enabled) refreshAdblockFilterLists()
+    }
+
+    fun clearBrowsingData() {
+        CookieManager.getInstance().removeAllCookies(null)
+        CookieManager.getInstance().flush()
+        WebStorage.getInstance().deleteAllData()
+        _tabs.value.forEach { tab ->
+            tab.webView?.apply {
+                clearCache(true)
+                clearHistory()
+                clearFormData()
+            }
+        }
     }
 
     fun toggleAutoUpdate(enabled: Boolean) {

@@ -78,12 +78,16 @@ class StorageManager(context: Context) {
         val raw = prefs.getString(KEY_SETTINGS, null)
         return if (raw != null) {
             try {
-                json.decodeFromString<BrowserSettings>(raw).withDefaultAdblockLists()
+                val decoded = json.decodeFromString<BrowserSettings>(raw)
+                    .withDefaultAdblockLists()
+                    .withPrivacyDefaults()
+                saveSettings(decoded)
+                decoded
             } catch (_: Exception) {
-                BrowserSettings()
+                BrowserSettings().withPrivacyDefaults()
             }
         } else {
-            BrowserSettings()
+            BrowserSettings().withPrivacyDefaults()
         }
     }
 
@@ -109,4 +113,15 @@ class StorageManager(context: Context) {
         if (!merged.contains("turtlecute_test")) merged.add("turtlecute_test")
         return copy(adblockFilterLists = merged)
     }
+
+    private fun BrowserSettings.withPrivacyDefaults(): BrowserSettings =
+        if (privacyMigrationVersion >= 1) {
+            this
+        } else {
+            copy(
+                autoUpdateEnabled = false,
+                autoUpdateFilterLists = false,
+                privacyMigrationVersion = 1
+            )
+        }
 }

@@ -78,6 +78,8 @@ pub struct BrowserSettings {
     pub adblock_custom_rules: Vec<String>,
     #[serde(default = "default_true")]
     pub auto_update_enabled: bool,
+    #[serde(default)]
+    pub privacy_migration_version: u8,
 }
 
 pub fn default_filter_lists() -> Vec<String> {
@@ -97,34 +99,10 @@ fn default_true() -> bool {
 }
 
 pub fn default_blocked_domains() -> Vec<String> {
-    vec![
-        "pipe.aria.microsoft.com".into(),
-        "events.data.microsoft.com".into(),
-        "telemetry.microsoft.com".into(),
-        "watson.telemetry.microsoft.com".into(),
-        "mobile.pipe.aria.microsoft.com".into(),
-        "google-analytics.com".into(),
-        "analytics.google.com".into(),
-        "googletagmanager.com".into(),
-        "stats.g.doubleclick.net".into(),
-        "sentry.io".into(),
-        "browser.sentry-cdn.com".into(),
-        "segment.io".into(),
-        "segment.com".into(),
-        "mixpanel.com".into(),
-        "amplitude.com".into(),
-        "clarity.ms".into(),
-        "hotjar.com".into(),
-        "datadoghq.com".into(),
-        "browser-intake-datadoghq.com".into(),
-        "loggly.com".into(),
-        "bugsnag.com".into(),
-        "crashlytics.com".into(),
-        "scorecardresearch.com".into(),
-        "criteo.com".into(),
-        "outbrain.com".into(),
-        "taboola.com".into(),
-    ]
+    crate::privacy::BLOCKED_TELEMETRY_DOMAINS
+        .iter()
+        .map(|domain| (*domain).to_string())
+        .collect()
 }
 
 pub fn default_adblock_domains() -> Vec<String> {
@@ -199,7 +177,8 @@ impl Default for BrowserSettings {
             adblock_whitelisted_domains: vec![],
             adblock_filter_lists: default_filter_lists(),
             adblock_custom_rules: vec![],
-            auto_update_enabled: true,
+            auto_update_enabled: false,
+            privacy_migration_version: 1,
         }
     }
 }
