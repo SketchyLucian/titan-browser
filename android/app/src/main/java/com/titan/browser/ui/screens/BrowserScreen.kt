@@ -49,6 +49,8 @@ fun BrowserScreen(
     val isSettingsVisible by viewModel.isSettingsVisible.collectAsState()
     val isFindInPageVisible by viewModel.isFindInPageVisible.collectAsState()
     val fullscreenView by viewModel.customFullscreenView.collectAsState()
+    val loadingProgress by viewModel.loadingProgress.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
 
     val activeTab = tabs.firstOrNull { it.id == activeTabId }
 
@@ -148,8 +150,8 @@ fun BrowserScreen(
             // Firefox Android Style Bottom Search & Navigation Bar
             BottomToolbar(
                 currentUrl = activeTab?.url ?: "titan://newtab",
-                isLoading = activeTab?.isLoading ?: false,
-                progress = activeTab?.progress ?: 0,
+                isLoading = isLoading,
+                progress = loadingProgress,
                 tabCount = tabs.size,
                 onNavigate = { viewModel.navigate(it) },
                 onReloadOrStop = { viewModel.reload() },

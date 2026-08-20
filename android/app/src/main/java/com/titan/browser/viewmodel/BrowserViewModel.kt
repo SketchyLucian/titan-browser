@@ -54,6 +54,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _isFindInPageVisible = MutableStateFlow(false)
     val isFindInPageVisible: StateFlow<Boolean> = _isFindInPageVisible.asStateFlow()
 
+    // High-frequency loading states decoupled from _tabs to eliminate Compose recomposition overhead
+    private val _loadingProgress = MutableStateFlow(0)
+    val loadingProgress: StateFlow<Int> = _loadingProgress.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
     // Fullscreen video playback state
     private val _customFullscreenView = MutableStateFlow<View?>(null)
     val customFullscreenView: StateFlow<View?> = _customFullscreenView.asStateFlow()
@@ -94,6 +101,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         _tabs.update { it + newTab }
         _activeTabId.value = newTab.id
+        _loadingProgress.value = 0
+        _isLoading.value = false
         _isTabGridVisible.value = false
     }
 
@@ -112,7 +121,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         webView.webChromeClient = TitanWebChromeClient(
             onProgressUpdate = { progress ->
-                updateTab(tabId) { it.copy(progress = progress, isLoading = progress < 100) }
+                if (_activeTabId.value == tabId) {
+                    _loadingProgress.value = progress
+                    _isLoading.value = progress < 100
+                }
             },
             onTitleUpdate = { title ->
                 updateTab(tabId) { it.copy(title = title) }
@@ -133,9 +145,17 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             context = context,
             settingsProvider = { _settings.value },
             onPageStartedCallback = { pageUrl ->
+                if (_activeTabId.value == tabId) {
+                    _loadingProgress.value = 10
+                    _isLoading.value = true
+                }
                 updateTab(tabId) { it.copy(url = pageUrl, isLoading = true) }
             },
             onPageFinishedCallback = { pageUrl, canGoBack, canGoForward ->
+                if (_activeTabId.value == tabId) {
+                    _loadingProgress.value = 100
+                    _isLoading.value = false
+                }
                 updateTab(tabId) {
                     it.copy(
                         url = pageUrl,
@@ -146,6 +166,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 }
             },
             onErrorCallback = { _, _, _ ->
+                if (_activeTabId.value == tabId) {
+                    _isLoading.value = false
+                }
                 updateTab(tabId) { it.copy(isLoading = false) }
             }
         )
@@ -179,6 +202,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         if (_tabs.value.any { it.id == tabId }) {
             _activeTabId.value = tabId
+            val nextTab = _tabs.value.firstOrNull { it.id == tabId }
+            _isLoading.value = nextTab?.isLoading ?: false
+            _loadingProgress.value = if (nextTab?.isLoading == true) 50 else 100
             _isTabGridVisible.value = false
         }
     }
@@ -197,12 +223,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             val nextTab = updatedTabs.last()
             nextTab.webView?.onResume()
             _activeTabId.value = nextTab.id
+            _isLoading.value = nextTab.isLoading
+            _loadingProgress.value = if (nextTab.isLoading) 50 else 100
         }
     }
 
     fun navigate(rawInput: String) {
         val active = getActiveTab() ?: return
         if (rawInput == "titan://newtab" || rawInput == "about:blank") {
+            _loadingProgress.value = 100
+            _isLoading.value = false
             updateTab(active.id) {
                 it.copy(
                     url = "titan://newtab",
@@ -220,6 +250,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         if (_settings.value.stripTrackingParameters) {
             url = UrlUtils.stripTrackingParameters(url)
         }
+        _loadingProgress.value = 10
+        _isLoading.value = true
         updateTab(active.id) { it.copy(url = url, isLoading = true) }
         active.webView?.loadUrl(url)
     }

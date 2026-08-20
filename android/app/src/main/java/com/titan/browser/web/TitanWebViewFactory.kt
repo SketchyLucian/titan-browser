@@ -25,15 +25,16 @@ object TitanWebViewFactory {
         settings.databaseEnabled = true
         settings.cacheMode = WebSettings.LOAD_DEFAULT
 
-        // 2. Hardware Acceleration & Multi-Core Pre-Rasterization
-        settings.offscreenPreRaster = true
+        // 2. Hardware Acceleration & Direct Window Compositing
+        // Disable offscreenPreRaster to prevent raster worker thread CPU contention during rapid DOM updates
+        settings.offscreenPreRaster = false
         // Avoid View.LAYER_TYPE_HARDWARE which creates an extra offscreen buffer copy;
         // WebView is already accelerated directly by the window's hardware canvas.
         webView.setLayerType(View.LAYER_TYPE_NONE, null)
-        webView.isNestedScrollingEnabled = true
+        webView.isNestedScrollingEnabled = false
         webView.keepScreenOn = true
 
-        // 3. Viewport & Rendering Pipeline
+        // 3. Viewport, Rendering Pipeline & Latency Minimization
         settings.loadWithOverviewMode = true
         settings.useWideViewPort = true
         settings.builtInZoomControls = true
@@ -43,29 +44,32 @@ object TitanWebViewFactory {
         settings.allowContentAccess = true
         settings.mediaPlaybackRequiresUserGesture = false
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        settings.setGeolocationEnabled(false)
+        settings.setNeedInitialFocus(false)
+        settings.setSupportMultipleWindows(false)
 
-        // 4. Cookie Manager Setup
+        // 4. SafeBrowsing & Security Check Bypass for Unthrottled Frame Transitions
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
+            WebSettingsCompat.setSafeBrowsingEnabled(settings, false)
+        }
+
+        // 5. Cookie Manager Setup
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
-        // 5. Desktop vs Mobile User Agent
+        // 6. Desktop vs Mobile User Agent
         if (isDesktopMode) {
             settings.userAgentString = DESKTOP_USER_AGENT
         } else {
             settings.userAgentString = null // Default mobile UA
         }
 
-        // 6. Web Theme & Native Dark Mode Strategy
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK_STRATEGY)) {
-            WebSettingsCompat.setForceDarkStrategy(
-                settings,
-                WebSettingsCompat.DARK_STRATEGY_PREFER_WEB_THEME_OVER_USER_AGENT_DARKENING
-            )
-        }
+        // 7. Web Theme & Native Dark Mode Strategy
+        // Avoid FORCE_DARK_AUTO which injects dynamic color filter matrices on every DOM node during rendering
         if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
             WebSettingsCompat.setForceDark(
                 settings,
-                if (isDarkTheme) WebSettingsCompat.FORCE_DARK_AUTO else WebSettingsCompat.FORCE_DARK_OFF
+                WebSettingsCompat.FORCE_DARK_OFF
             )
         }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
