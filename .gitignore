@@ -11,4 +11,5 @@ android/app/*.iml
 android/local.properties
 /gen
 /dist
+/android-*.png
 

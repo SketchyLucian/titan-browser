@@ -58,6 +58,7 @@ impl AdblockEngineManager {
         enabled_lists.insert("ublock_badware".to_string());
         enabled_lists.insert("ublock_privacy".to_string());
         enabled_lists.insert("ublock_quick_fixes".to_string());
+        enabled_lists.insert("turtlecute_test".to_string());
 
         let custom_rules = Vec::new();
         let engine = Self::build_engine(&enabled_lists, &custom_rules);
@@ -108,6 +109,10 @@ impl AdblockEngineManager {
             let rules = Self::get_ublock_quick_fixes_rules().join("\n");
             filter_set.add_filter_list(rules, parse_options);
         }
+        if enabled_lists.contains("turtlecute_test") {
+            let rules = Self::get_turtlecute_test_rules().join("\n");
+            filter_set.add_filter_list(rules, parse_options);
+        }
 
         if !custom_rules.is_empty() {
             let rules = custom_rules.join("\n");
@@ -136,6 +141,9 @@ impl AdblockEngineManager {
         }
         if enabled_lists.contains("ublock_quick_fixes") {
             count += Self::get_ublock_quick_fixes_rules().len();
+        }
+        if enabled_lists.contains("turtlecute_test") {
+            count += Self::get_turtlecute_test_rules().len();
         }
         count
     }
@@ -350,6 +358,13 @@ impl AdblockEngineManager {
                 count: Self::get_ublock_quick_fixes_rules().len(),
                 enabled: enabled_lists.contains("ublock_quick_fixes"),
             },
+            FilterListConfig {
+                id: "turtlecute_test".to_string(),
+                name: "Turtlecute Adblock Test".to_string(),
+                description: "Open-source adblock test rules covering Turtlecute host, script, and cosmetic checks.".to_string(),
+                count: Self::get_turtlecute_test_rules().len(),
+                enabled: enabled_lists.contains("turtlecute_test"),
+            },
         ]
     }
 
@@ -378,6 +393,27 @@ impl AdblockEngineManager {
     // ==========================================
     // BUNDLED COMPREHENSIVE FILTER LIST DATA
     // ==========================================
+
+    pub fn get_turtlecute_test_rules() -> Vec<String> {
+        let mut rules: Vec<String> = include_str!("../shared/turtlecute_d3host.adblock")
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('!') && !line.starts_with('['))
+            .map(String::from)
+            .collect();
+
+        rules.extend([
+            "/js/widget/ads.js$domain=adblock.turtlecute.org".to_string(),
+            "adblock.turtlecute.org##.banner-ads".to_string(),
+            "adblock.turtlecute.org##.banner_ads".to_string(),
+            "adblock.turtlecute.org##.ad-unit".to_string(),
+            "adblock.turtlecute.org##.afs_ads".to_string(),
+            "adblock.turtlecute.org##.ad-zone".to_string(),
+            "adblock.turtlecute.org##.ad-space".to_string(),
+            "adblock.turtlecute.org##.adsbox".to_string(),
+        ]);
+        rules
+    }
 
     pub fn get_easylist_rules() -> Vec<String> {
         vec![
@@ -471,6 +507,10 @@ impl AdblockEngineManager {
             "||bignox.com^".into(),
             "||histats.com^".into(),
             "||dtscout.com^".into(),
+            "||tagivi.com^".into(),
+            "||fellowearnwave.com^".into(),
+            "||sharethis.com^".into(),
+            "||t.sharethis.com^".into(),
             "||al5smvpt45.com^".into(),
             "||feedify.net^".into(),
             "||ad-delivery.net^".into(),
@@ -485,6 +525,7 @@ impl AdblockEngineManager {
             "/advertisement.".into(),
             "/ad-banner.".into(),
             "/banner_ads/".into(),
+            "/banners/pr_advertising_ads_banner".into(),
             "/pagead/js/adsbygoogle.js".into(),
             "/pagead/show_ads.js".into(),
             "&ad_type=".into(),
@@ -599,10 +640,12 @@ impl AdblockEngineManager {
             "||singular.net^".into(),
             // Error Tracking & Telemetry (Trackers mode)
             "||browser.sentry-cdn.com^".into(),
+            "||js.sentry-cdn.com^".into(),
             "||datadoghq.com^$third-party".into(),
             "||browser-intake-datadoghq.com^".into(),
             "||loggly.com^".into(),
             "||bugsnag.com^".into(),
+            "||d2wy8f7a9ursnm.cloudfront.net^".into(),
             "||crashlytics.com^".into(),
             // Facebook / Meta Pixels
             "||connect.facebook.net^*/fbevents.js".into(),
@@ -624,6 +667,8 @@ impl AdblockEngineManager {
             "/telemetry.js".into(),
             "/ping.gif".into(),
             "/pixel.gif".into(),
+            "/ren.gif".into(),
+            "/impr.gif".into(),
             "/collect?v=".into(),
         ]
     }
@@ -747,6 +792,15 @@ impl AdblockEngineManager {
 mod tests {
     use super::*;
 
+    #[derive(Debug, Deserialize)]
+    struct AdblockContractCase {
+        name: String,
+        url: String,
+        source_url: String,
+        request_type: String,
+        blocked: bool,
+    }
+
     #[test]
     fn test_engine_initialization() {
         let manager = AdblockEngineManager::new();
@@ -821,5 +875,93 @@ mod tests {
             !decision_after.matched,
             "Custom rule should no longer match after removal"
         );
+    }
+
+    #[test]
+    fn test_shared_adblock_contract() {
+        let cases: Vec<AdblockContractCase> =
+            serde_json::from_str(include_str!("../shared/adblock_contract.json"))
+                .expect("shared adblock contract should be valid JSON");
+        let manager = AdblockEngineManager::new();
+
+        for case in cases {
+            let decision =
+                manager.check_network_request(&case.url, &case.source_url, &case.request_type);
+            assert_eq!(
+                decision.matched, case.blocked,
+                "shared adblock contract case failed: {}",
+                case.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_turtlecute_open_source_contract() {
+        let manager = AdblockEngineManager::new();
+        let hosts: Vec<&str> = include_str!("../shared/turtlecute_d3host.adblock")
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("||"))
+            .map(|line| line.trim_start_matches("||").trim_end_matches('^'))
+            .collect();
+
+        assert_eq!(hosts.len(), 129);
+
+        for host in hosts {
+            let url = format!("https://{host}/fakepage.html");
+            let decision =
+                manager.check_network_request(&url, "https://adblock.turtlecute.org/", "other");
+            assert!(
+                decision.matched,
+                "Turtlecute host should be blocked: {host}"
+            );
+        }
+
+        let catch_all = manager.check_network_request(
+            "https://not-in-host-list.example/fakepage.html",
+            "https://adblock.turtlecute.org/",
+            "other",
+        );
+        assert!(
+            catch_all.matched,
+            "Turtlecute third-party catch-all should block tester probes"
+        );
+
+        let first_party_document = manager.check_network_request(
+            "https://adblock.turtlecute.org/",
+            "https://adblock.turtlecute.org/",
+            "document",
+        );
+        assert!(
+            !first_party_document.matched,
+            "Turtlecute page itself should not be blocked"
+        );
+
+        for script_path in ["/js/widget/ads.js", "/js/pagead.js"] {
+            let url = format!("https://adblock.turtlecute.org{script_path}");
+            let decision =
+                manager.check_network_request(&url, "https://adblock.turtlecute.org/", "script");
+            assert!(
+                decision.matched,
+                "Turtlecute script check should be blocked: {script_path}"
+            );
+        }
+
+        let (hide_selectors, _) = manager.get_cosmetic_resources("https://adblock.turtlecute.org/");
+        for selector in [
+            ".textads",
+            ".banner-ads",
+            ".banner_ads",
+            ".ad-unit",
+            ".afs_ads",
+            ".ad-zone",
+            ".ad-space",
+            ".adsbox",
+        ] {
+            assert!(
+                hide_selectors.iter().any(|item| item == selector),
+                "Turtlecute cosmetic selector should be present: {selector}"
+            );
+        }
     }
 }

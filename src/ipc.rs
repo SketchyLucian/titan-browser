@@ -88,6 +88,7 @@ pub fn default_filter_lists() -> Vec<String> {
         "ublock_badware".into(),
         "ublock_privacy".into(),
         "ublock_quick_fixes".into(),
+        "turtlecute_test".into(),
     ]
 }
 

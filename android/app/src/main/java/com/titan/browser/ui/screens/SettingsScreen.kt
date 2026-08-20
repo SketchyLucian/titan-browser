@@ -64,6 +64,7 @@ import com.titan.browser.ui.theme.TitanSurface
 import com.titan.browser.ui.theme.TitanSurfaceVariant
 import com.titan.browser.ui.theme.TitanTextPrimary
 import com.titan.browser.ui.theme.TitanTextSecondary
+import com.titan.browser.web.AdblockManager
 
 @Composable
 fun SettingsScreen(
@@ -75,6 +76,8 @@ fun SettingsScreen(
     onToggleBlockVideoAds: (Boolean) -> Unit,
     onToggleCosmeticFiltering: (Boolean) -> Unit,
     onToggleBlockPopups: (Boolean) -> Unit,
+    onToggleAggressiveAdblock: (Boolean) -> Unit,
+    onToggleFilterList: (String, Boolean) -> Unit,
     onToggleStripTrackingParameters: (Boolean) -> Unit,
     onToggleAutoUpdate: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
@@ -204,6 +207,67 @@ fun SettingsScreen(
                 )
             }
 
+            val filterLists = AdblockManager.getFilterLists(settings)
+            val activeRuleCount = filterLists
+                .filter { it.enabled }
+                .sumOf { it.count } + settings.adblockCustomRules.size
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(modifier = Modifier.width(40.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "uBlock Origin Filter Lists",
+                        color = TitanTextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "$activeRuleCount active rules",
+                        color = TitanTextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            filterLists.forEach { list ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Spacer(modifier = Modifier.width(56.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = list.name,
+                            color = TitanTextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "${list.count} rules",
+                            color = TitanTextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Switch(
+                        checked = list.enabled,
+                        enabled = settings.adblockEnabled,
+                        onCheckedChange = { onToggleFilterList(list.id, it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = TitanPrimary,
+                            checkedTrackColor = TitanSurfaceVariant,
+                            uncheckedTrackColor = TitanBorder
+                        )
+                    )
+                }
+            }
+
             // Cosmetic Element Hiding Toggle
             Row(
                 modifier = Modifier
@@ -262,6 +326,39 @@ fun SettingsScreen(
                     checked = settings.blockPopups,
                     enabled = settings.adblockEnabled,
                     onCheckedChange = { onToggleBlockPopups(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = TitanPrimary,
+                        checkedTrackColor = TitanSurfaceVariant,
+                        uncheckedTrackColor = TitanBorder
+                    )
+                )
+            }
+
+            // Aggressive uBlock Filtering Toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(modifier = Modifier.width(40.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Aggressive uBlock Filtering",
+                        color = TitanTextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Use stricter tracker and ad heuristics in addition to filter lists",
+                        color = TitanTextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = settings.aggressiveMode,
+                    enabled = settings.adblockEnabled,
+                    onCheckedChange = { onToggleAggressiveAdblock(it) },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = TitanPrimary,
                         checkedTrackColor = TitanSurfaceVariant,

@@ -19,6 +19,7 @@ class StorageManager(context: Context) {
     companion object {
         private const val KEY_BOOKMARKS = "titan_bookmarks"
         private const val KEY_SETTINGS = "titan_settings"
+        private const val KEY_ADBLOCK_FILTER_PREFIX = "adblock_filter_"
 
         val DEFAULT_BOOKMARKS = listOf(
             Bookmark("YouTube", "https://www.youtube.com"),
@@ -77,7 +78,7 @@ class StorageManager(context: Context) {
         val raw = prefs.getString(KEY_SETTINGS, null)
         return if (raw != null) {
             try {
-                json.decodeFromString<BrowserSettings>(raw)
+                json.decodeFromString<BrowserSettings>(raw).withDefaultAdblockLists()
             } catch (_: Exception) {
                 BrowserSettings()
             }
@@ -92,5 +93,20 @@ class StorageManager(context: Context) {
             prefs.edit().putString(KEY_SETTINGS, raw).apply()
         } catch (_: Exception) {
         }
+    }
+
+    fun loadAdblockFilterLists(ids: Collection<String>): Map<String, String> =
+        ids.mapNotNull { id ->
+            prefs.getString(KEY_ADBLOCK_FILTER_PREFIX + id, null)?.let { id to it }
+        }.toMap()
+
+    fun saveAdblockFilterList(id: String, content: String) {
+        prefs.edit().putString(KEY_ADBLOCK_FILTER_PREFIX + id, content).apply()
+    }
+
+    private fun BrowserSettings.withDefaultAdblockLists(): BrowserSettings {
+        val merged = adblockFilterLists.toMutableList()
+        if (!merged.contains("turtlecute_test")) merged.add("turtlecute_test")
+        return copy(adblockFilterLists = merged)
     }
 }

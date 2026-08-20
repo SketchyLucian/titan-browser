@@ -16,6 +16,8 @@ import com.titan.browser.model.UpdateStatus
 import com.titan.browser.storage.StorageManager
 import com.titan.browser.update.UpdateChecker
 import com.titan.browser.BuildConfig
+import com.titan.browser.web.AdblockFilterUpdater
+import com.titan.browser.web.AdblockManager
 import com.titan.browser.web.TitanWebChromeClient
 import com.titan.browser.web.TitanWebViewClient
 import com.titan.browser.web.TitanWebViewFactory
@@ -63,6 +65,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _isFindInPageVisible = MutableStateFlow(false)
     val isFindInPageVisible: StateFlow<Boolean> = _isFindInPageVisible.asStateFlow()
 
+    private val _isToolbarVisible = MutableStateFlow(true)
+    val isToolbarVisible: StateFlow<Boolean> = _isToolbarVisible.asStateFlow()
+
     // High-frequency loading states decoupled from _tabs to eliminate Compose recomposition overhead
     private val _loadingProgress = MutableStateFlow(0)
     val loadingProgress: StateFlow<Int> = _loadingProgress.asStateFlow()
@@ -84,8 +89,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private fun loadData() {
         viewModelScope.launch {
             _bookmarks.value = storageManager.loadBookmarks()
+            val filterSourceIds = AdblockManager.filterListSources.map { it.id }
+            AdblockManager.setCachedFilterLists(storageManager.loadAdblockFilterLists(filterSourceIds))
             val loadedSettings = storageManager.loadSettings()
             _settings.value = loadedSettings
+            if (loadedSettings.adblockEnabled) {
+                refreshAdblockFilterLists()
+            }
             if (loadedSettings.autoUpdateEnabled) {
                 checkForUpdates()
             }
@@ -116,6 +126,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _activeTabId.value = newTab.id
         _loadingProgress.value = 0
         _isLoading.value = false
+        _isToolbarVisible.value = true
         _isTabGridVisible.value = false
     }
 
@@ -155,6 +166,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private fun createConfiguredWebView(tabId: String): WebView {
         val context = getApplication<Application>()
         val webView = TitanWebViewFactory.createWebView(context)
+        webView.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+            if (_activeTabId.value == tabId) {
+                updateToolbarVisibilityForScroll(scrollY, oldScrollY)
+            }
+        }
+
         webView.webChromeClient = TitanWebChromeClient(
             onProgressUpdate = { progress ->
                 if (_activeTabId.value == tabId) {
@@ -184,6 +201,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 if (_activeTabId.value == tabId) {
                     _loadingProgress.value = 10
                     _isLoading.value = true
+                    _isToolbarVisible.value = true
                 }
                 updateTab(tabId) { it.copy(url = pageUrl, isLoading = true) }
             },
@@ -238,6 +256,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             val nextTab = _tabs.value.firstOrNull { it.id == tabId }
             _isLoading.value = nextTab?.isLoading ?: false
             _loadingProgress.value = if (nextTab?.isLoading == true) 50 else 100
+            _isToolbarVisible.value = true
             _isTabGridVisible.value = false
         }
     }
@@ -258,6 +277,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             _activeTabId.value = nextTab.id
             _isLoading.value = nextTab.isLoading
             _loadingProgress.value = if (nextTab.isLoading) 50 else 100
+            _isToolbarVisible.value = true
         }
     }
 
@@ -267,6 +287,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             active.webView?.destroy()
             _loadingProgress.value = 100
             _isLoading.value = false
+            _isToolbarVisible.value = true
             updateTab(active.id) {
                 it.copy(
                     url = "titan://newtab",
@@ -290,6 +311,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
         _loadingProgress.value = 10
         _isLoading.value = true
+        _isToolbarVisible.value = true
         val webView = active.webView ?: createConfiguredWebView(active.id)
         updateTab(active.id) {
             it.copy(
@@ -402,6 +424,35 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         storageManager.saveSettings(newSettings)
     }
 
+    fun toggleAggressiveAdblock(enabled: Boolean) {
+        val newSettings = _settings.value.copy(aggressiveMode = enabled)
+        _settings.value = newSettings
+        storageManager.saveSettings(newSettings)
+    }
+
+    fun toggleAdblockFilterList(listId: String, enabled: Boolean) {
+        val current = _settings.value.adblockFilterLists.toMutableList()
+        if (enabled && !current.contains(listId)) {
+            current.add(listId)
+        } else if (!enabled) {
+            current.remove(listId)
+        }
+
+        val newSettings = _settings.value.copy(adblockFilterLists = current)
+        _settings.value = newSettings
+        storageManager.saveSettings(newSettings)
+    }
+
+    fun refreshAdblockFilterLists() {
+        viewModelScope.launch {
+            val result = AdblockFilterUpdater.update(AdblockManager.filterListSources)
+            result.updated.forEach { (id, content) ->
+                storageManager.saveAdblockFilterList(id, content)
+                AdblockManager.setCachedFilterList(id, content)
+            }
+        }
+    }
+
     fun toggleStripTrackingParameters(enabled: Boolean) {
         val newSettings = _settings.value.copy(stripTrackingParameters = enabled)
         _settings.value = newSettings
@@ -441,12 +492,42 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         customViewCallback = null
     }
 
+    private fun updateToolbarVisibilityForScroll(scrollY: Int, oldScrollY: Int) {
+        val delta = scrollY - oldScrollY
+        if (scrollY <= 8) {
+            _isToolbarVisible.value = true
+        } else if (delta > 14) {
+            _isToolbarVisible.value = false
+        } else if (delta < -14) {
+            _isToolbarVisible.value = true
+        }
+    }
+
     // Sheet visibility toggles
-    fun setTabGridVisible(visible: Boolean) { _isTabGridVisible.value = visible }
-    fun setMenuVisible(visible: Boolean) { _isMenuVisible.value = visible }
-    fun setBookmarksVisible(visible: Boolean) { _isBookmarksVisible.value = visible }
-    fun setSettingsVisible(visible: Boolean) { _isSettingsVisible.value = visible }
-    fun setFindInPageVisible(visible: Boolean) { _isFindInPageVisible.value = visible }
+    fun setTabGridVisible(visible: Boolean) {
+        _isToolbarVisible.value = true
+        _isTabGridVisible.value = visible
+    }
+
+    fun setMenuVisible(visible: Boolean) {
+        _isToolbarVisible.value = true
+        _isMenuVisible.value = visible
+    }
+
+    fun setBookmarksVisible(visible: Boolean) {
+        _isToolbarVisible.value = true
+        _isBookmarksVisible.value = visible
+    }
+
+    fun setSettingsVisible(visible: Boolean) {
+        _isToolbarVisible.value = true
+        _isSettingsVisible.value = visible
+    }
+
+    fun setFindInPageVisible(visible: Boolean) {
+        _isToolbarVisible.value = true
+        _isFindInPageVisible.value = visible
+    }
 
     override fun onCleared() {
         super.onCleared()

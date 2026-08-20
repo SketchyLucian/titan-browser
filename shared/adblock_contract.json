@@ -1,0 +1,114 @@
+[
+  {
+    "name": "blocks_doubleclick_script",
+    "url": "https://ad.doubleclick.net/ddm/trackclk/N1234",
+    "source_url": "https://www.example.com",
+    "request_type": "script",
+    "blocked": true
+  },
+  {
+    "name": "blocks_google_analytics_script",
+    "url": "https://www.google-analytics.com/analytics.js",
+    "source_url": "https://www.example.com",
+    "request_type": "script",
+    "blocked": true
+  },
+  {
+    "name": "blocks_google_tag_manager_script",
+    "url": "https://www.googletagmanager.com/gtag/js?id=G-EPK7X69JWC",
+    "source_url": "https://adblock-tester.com",
+    "request_type": "script",
+    "blocked": true
+  },
+  {
+    "name": "blocks_popads_script",
+    "url": "https://popads.net/script.js",
+    "source_url": "https://www.example.com",
+    "request_type": "script",
+    "blocked": true
+  },
+  {
+    "name": "blocks_sentry_cdn_script",
+    "url": "https://js.sentry-cdn.com/98eefed2636036c3bdb8377b11ff28fe.min.js",
+    "source_url": "https://adblock-tester.com",
+    "request_type": "script",
+    "blocked": true
+  },
+  {
+    "name": "blocks_bugsnag_cloudfront_script",
+    "url": "https://d2wy8f7a9ursnm.cloudfront.net/v4/bugsnag.min.js",
+    "source_url": "https://adblock-tester.com",
+    "request_type": "script",
+    "blocked": true
+  },
+  {
+    "name": "blocks_adblock_tester_banner_image",
+    "url": "https://adblock-tester.com/banners/pr_advertising_ads_banner.png",
+    "source_url": "https://adblock-tester.com",
+    "request_type": "image",
+    "blocked": true
+  },
+  {
+    "name": "blocks_adblock_tester_banner_gif",
+    "url": "https://adblock-tester.com/banners/pr_advertising_ads_banner.gif",
+    "source_url": "https://adblock-tester.com",
+    "request_type": "image",
+    "blocked": true
+  },
+  {
+    "name": "blocks_adblock_tester_flash_banner",
+    "url": "https://adblock-tester.com/banners/pr_advertising_ads_banner.swf?v=1",
+    "source_url": "https://adblock-tester.com",
+    "request_type": "media",
+    "blocked": true
+  },
+  {
+    "name": "blocks_adblock_tester_custom_ad_script",
+    "url": "https://ymatuhin.ru/ads/ads.js",
+    "source_url": "https://adblock-tester.com",
+    "request_type": "script",
+    "blocked": true
+  },
+  {
+    "name": "blocks_streaming_site_tagivi_loader",
+    "url": "https://tagivi.com/1/8fe5e554a2e8370f987ba11cc1255c6c",
+    "source_url": "https://cineb.sx/home",
+    "request_type": "script",
+    "blocked": true
+  },
+  {
+    "name": "blocks_streaming_site_fellowearnwave_beacon",
+    "url": "https://fellowearnwave.com/ren.gif?sid=abc",
+    "source_url": "https://cineb.sx/home",
+    "request_type": "image",
+    "blocked": true
+  },
+  {
+    "name": "blocks_sharethis_tracking_frame",
+    "url": "https://t.sharethis.com/a/t_.htm?ver=1.2087.23432&cid=c010",
+    "source_url": "https://cineb.sx/home",
+    "request_type": "subdocument",
+    "blocked": true
+  },
+  {
+    "name": "allows_youtube_player_exception",
+    "url": "https://www.youtube.com/youtubei/v1/player",
+    "source_url": "https://www.youtube.com/watch?v=abc",
+    "request_type": "xhr",
+    "blocked": false
+  },
+  {
+    "name": "allows_wikipedia_document",
+    "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+    "source_url": "https://en.wikipedia.org",
+    "request_type": "main_frame",
+    "blocked": false
+  },
+  {
+    "name": "allows_internal_data_url",
+    "url": "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///wAA",
+    "source_url": "https://www.example.com",
+    "request_type": "image",
+    "blocked": false
+  }
+]

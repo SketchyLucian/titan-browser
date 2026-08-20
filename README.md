@@ -79,3 +79,19 @@ cd android
 ```
 See the [Android README](android/README.md) for full architectural and feature details.
 
+---
+
+## Cross-platform Parity
+
+Shared browser behavior should have one contract that both desktop and Android verify. Adblock URL decisions are covered by [`shared/adblock_contract.json`](shared/adblock_contract.json).
+
+Run these checks before merging platform changes:
+
+```powershell
+cargo test
+cd android
+.\gradlew.bat testDebugUnitTest assembleDebug
+```
+
+GitHub Actions also runs the same desktop and Android checks on pushes and pull requests.
+
