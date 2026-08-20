@@ -10,6 +10,11 @@ class TitanApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)
+        } catch (_: Exception) {
+        }
+
         // Enable WebView debugging in debug builds
         if (BuildConfig.DEBUG) {
             WebView.setWebContentsDebuggingEnabled(true)

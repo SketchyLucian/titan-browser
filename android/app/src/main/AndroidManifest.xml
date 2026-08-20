@@ -16,6 +16,10 @@
         android:theme="@style/Theme.TitanBrowser"
         android:usesCleartextTraffic="true">
 
+        <meta-data
+            android:name="android.webkit.WebView.MultiProcess"
+            android:value="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

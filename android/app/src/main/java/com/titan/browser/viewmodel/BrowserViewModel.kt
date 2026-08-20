@@ -101,7 +101,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         // Pause previous active tab to save CPU cycles and battery
         getActiveTab()?.webView?.onPause()
 
-        var normalizedUrl = if (url == "titan://newtab" || url == "about:blank") {
+        val normalizedUrl = if (url == "titan://newtab" || url == "about:blank") {
             "titan://newtab"
         } else {
             val norm = UrlUtils.normalizeOrSearch(
@@ -119,19 +119,42 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _isTabGridVisible.value = false
     }
 
+    fun openUrlFromExternalIntent(url: String) {
+        val active = getActiveTab()
+        if (active?.url == "titan://newtab" && active.webView == null) {
+            navigate(url)
+        } else {
+            openNewTab(url)
+        }
+    }
+
     private fun createTabInstance(initialUrl: String): Tab {
-        val context = getApplication<Application>()
         val tabId = java.util.UUID.randomUUID().toString()
         val isNewTab = initialUrl == "titan://newtab" || initialUrl == "about:blank"
 
-        val webView = TitanWebViewFactory.createWebView(context)
-        val tab = Tab(
+        if (isNewTab) {
+            return Tab(
+                id = tabId,
+                url = "titan://newtab",
+                title = "New Tab",
+                webView = null
+            )
+        }
+
+        val webView = createConfiguredWebView(tabId)
+        webView.loadUrl(initialUrl)
+
+        return Tab(
             id = tabId,
             url = initialUrl,
-            title = if (isNewTab) "New Tab" else "Loading...",
+            title = "Loading...",
             webView = webView
         )
+    }
 
+    private fun createConfiguredWebView(tabId: String): WebView {
+        val context = getApplication<Application>()
+        val webView = TitanWebViewFactory.createWebView(context)
         webView.webChromeClient = TitanWebChromeClient(
             onProgressUpdate = { progress ->
                 if (_activeTabId.value == tabId) {
@@ -186,10 +209,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             }
         )
 
-        if (!isNewTab) {
-            webView.loadUrl(initialUrl)
-        }
-        return tab
+        return webView
     }
 
     private fun updateTab(tabId: String, transform: (Tab) -> Tab) {
@@ -244,6 +264,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun navigate(rawInput: String) {
         val active = getActiveTab() ?: return
         if (rawInput == "titan://newtab" || rawInput == "about:blank") {
+            active.webView?.destroy()
             _loadingProgress.value = 100
             _isLoading.value = false
             updateTab(active.id) {
@@ -251,7 +272,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                     url = "titan://newtab",
                     title = "New Tab",
                     isLoading = false,
-                    progress = 0
+                    progress = 0,
+                    canGoBack = false,
+                    canGoForward = false,
+                    favicon = null,
+                    webView = null
                 )
             }
             return
@@ -265,8 +290,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
         _loadingProgress.value = 10
         _isLoading.value = true
-        updateTab(active.id) { it.copy(url = url, isLoading = true) }
-        active.webView?.loadUrl(url)
+        val webView = active.webView ?: createConfiguredWebView(active.id)
+        updateTab(active.id) {
+            it.copy(
+                url = url,
+                title = "Loading...",
+                isLoading = true,
+                webView = webView
+            )
+        }
+        webView.loadUrl(url)
     }
 
 
