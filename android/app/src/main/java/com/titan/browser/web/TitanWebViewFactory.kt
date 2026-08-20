@@ -27,10 +27,11 @@ object TitanWebViewFactory {
 
         // 2. Hardware Acceleration & Multi-Core Pre-Rasterization
         settings.offscreenPreRaster = true
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        // Avoid View.LAYER_TYPE_HARDWARE which creates an extra offscreen buffer copy;
+        // WebView is already accelerated directly by the window's hardware canvas.
+        webView.setLayerType(View.LAYER_TYPE_NONE, null)
         webView.isNestedScrollingEnabled = true
         webView.keepScreenOn = true
-        settings.setRenderPriority(WebSettings.RenderPriority.HIGH)
 
         // 3. Viewport & Rendering Pipeline
         settings.loadWithOverviewMode = true

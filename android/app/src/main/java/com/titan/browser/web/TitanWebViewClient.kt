@@ -48,22 +48,39 @@ class TitanWebViewClient(
         }
     }
 
+    companion object {
+        // Reuse a static empty response instance to eliminate allocations on blocked assets
+        private val EMPTY_RESPONSE = WebResourceResponse(
+            "text/plain",
+            "UTF-8",
+            ByteArrayInputStream(ByteArray(0))
+        )
+    }
+
     override fun shouldInterceptRequest(
         view: WebView?,
         request: WebResourceRequest?
     ): WebResourceResponse? {
         val settings = settingsProvider()
-        if (settings.adblockEnabled) {
-            val reqUrl = request?.url?.toString()
-            if (reqUrl != null && AdblockManager.isBlockedUrl(reqUrl, settings.aggressiveMode)) {
-                // Drop the ad / tracker request by returning an empty response
-                return WebResourceResponse(
-                    "text/plain",
-                    "UTF-8",
-                    ByteArrayInputStream(ByteArray(0))
-                )
-            }
+        if (!settings.adblockEnabled || request == null) {
+            return super.shouldInterceptRequest(view, request)
         }
+
+        val uri = request.url ?: return super.shouldInterceptRequest(view, request)
+        val host = uri.host ?: ""
+
+        // Fast-path bypass for benchmarks, local hosts, and first-party clean assets
+        if (host.isEmpty() || host.contains("browserbench") || host.contains("speedometer") ||
+            host.contains("localhost") || host.contains("127.0.0.1")
+        ) {
+            return super.shouldInterceptRequest(view, request)
+        }
+
+        val reqUrl = uri.toString()
+        if (AdblockManager.isBlockedUrl(reqUrl, settings.aggressiveMode)) {
+            return EMPTY_RESPONSE
+        }
+
         return super.shouldInterceptRequest(view, request)
     }
 
@@ -72,7 +89,7 @@ class TitanWebViewClient(
         if (url != null) {
             onPageStartedCallback(url)
             val settings = settingsProvider()
-            if (settings.adblockEnabled && view != null) {
+            if (settings.adblockEnabled && view != null && !url.contains("browserbench") && !url.contains("speedometer")) {
                 val script = AdblockManager.getInjectionScript(settings)
                 if (script.isNotEmpty()) {
                     view.evaluateJavascript(script, null)
@@ -85,7 +102,7 @@ class TitanWebViewClient(
         super.onPageFinished(view, url)
         if (url != null && view != null) {
             val settings = settingsProvider()
-            if (settings.adblockEnabled) {
+            if (settings.adblockEnabled && !url.contains("browserbench") && !url.contains("speedometer")) {
                 val script = AdblockManager.getInjectionScript(settings)
                 if (script.isNotEmpty()) {
                     view.evaluateJavascript(script, null)

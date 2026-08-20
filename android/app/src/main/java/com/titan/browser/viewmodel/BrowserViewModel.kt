@@ -78,6 +78,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun openNewTab(url: String = "titan://newtab") {
+        // Pause previous active tab to save CPU cycles and battery
+        getActiveTab()?.webView?.onPause()
+
         var normalizedUrl = if (url == "titan://newtab" || url == "about:blank") {
             "titan://newtab"
         } else {
@@ -160,6 +163,20 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun switchTab(tabId: String) {
+        val currentId = _activeTabId.value
+        if (currentId == tabId) {
+            _isTabGridVisible.value = false
+            return
+        }
+
+        _tabs.value.forEach { tab ->
+            if (tab.id == tabId) {
+                tab.webView?.onResume()
+            } else if (tab.id == currentId) {
+                tab.webView?.onPause()
+            }
+        }
+
         if (_tabs.value.any { it.id == tabId }) {
             _activeTabId.value = tabId
             _isTabGridVisible.value = false
@@ -177,7 +194,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         if (updatedTabs.isEmpty()) {
             openNewTab("titan://newtab")
         } else if (_activeTabId.value == tabId) {
-            _activeTabId.value = updatedTabs.last().id
+            val nextTab = updatedTabs.last()
+            nextTab.webView?.onResume()
+            _activeTabId.value = nextTab.id
         }
     }
 
