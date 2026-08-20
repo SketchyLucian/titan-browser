@@ -133,6 +133,8 @@ impl BrowserManager {
         let proxy_clone = self.proxy.clone();
         let html_content = Self::get_chrome_html();
 
+        // Each view needs its own child window. A root webview installs a shared
+        // parent focus/resize hook, which is unsafe when several views coexist.
         let header = WebViewBuilder::new()
             .with_bounds(header_bounds)
             .with_background_color((r, g, b, a))
@@ -141,7 +143,7 @@ impl BrowserManager {
             .with_ipc_handler(move |req| {
                 let _ = proxy_clone.send_event(UserEvent::Ipc(req.body().clone()));
             })
-            .build(&*self.window)
+            .build_as_child(&*self.window)
             .expect("Failed to create header webview");
 
         self.header_webview = Some(header);
@@ -429,11 +431,13 @@ impl BrowserManager {
         let content_bounds = self.get_content_bounds();
         let bg_color = self.get_theme_background_color();
 
+        // Tab activation owns focus; a hidden tab must not request it at creation.
         let builder = WebViewBuilder::new()
             .with_bounds(content_bounds)
             .with_background_color(bg_color)
             .with_transparent(false)
             .with_visible(false)
+            .with_focused(false)
             .with_initialization_script(&init_script)
             .with_ipc_handler(move |req| {
                 let _ = proxy_ipc.send_event(UserEvent::Ipc(req.body().clone()));
@@ -475,7 +479,7 @@ impl BrowserManager {
         } else {
             builder.with_url(&normalized_url)
         }
-        .build(&*self.window)
+        .build_as_child(&*self.window)
         .expect("Failed to create content webview for tab");
 
         let default_title = if is_newtab {
