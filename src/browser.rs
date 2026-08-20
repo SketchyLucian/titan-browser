@@ -1,6 +1,4 @@
-use crate::ipc::{
-    Bookmark, BrowserModule, BrowserSettings, IpcBrowserState, IpcIncoming, IpcTabInfo,
-};
+use crate::ipc::{Bookmark, BrowserModule, BrowserSettings, IpcIncoming, IpcTabInfo};
 use crate::storage::StorageManager;
 use crate::updater::{UpdateCheckResult, UpdateInfo, UpdateState, UpdateStatus};
 use crate::url_utils::normalize_or_search_url_with_engine;
@@ -51,6 +49,7 @@ pub struct BrowserManager {
     pub proxy: EventLoopProxy<UserEvent>,
     pub storage: StorageManager,
     pub header_webview: Option<WebView>,
+    pub prewarmed_settings_tab: Option<Tab>,
     pub tabs: Vec<Tab>,
     pub active_tab_id: Option<u32>,
     pub next_tab_id: u32,
@@ -95,6 +94,7 @@ impl BrowserManager {
             proxy,
             storage,
             header_webview: None,
+            prewarmed_settings_tab: None,
             tabs: Vec::new(),
             active_tab_id: None,
             next_tab_id: 1,
@@ -150,6 +150,7 @@ impl BrowserManager {
 
         // Open default initial tab (Titan New Tab)
         self.create_tab("titan://newtab");
+        self.prewarm_settings_tab();
 
         if self.settings.auto_update_enabled {
             self.check_for_updates();
@@ -381,7 +382,7 @@ impl BrowserManager {
         }
     }
 
-    pub fn create_tab(&mut self, target_url: &str) -> u32 {
+    fn build_tab(&mut self, target_url: &str) -> Tab {
         let tab_id = self.next_tab_id;
         self.next_tab_id += 1;
 
@@ -498,7 +499,7 @@ impl BrowserManager {
             "New Tab".to_string()
         };
 
-        let new_tab = Tab {
+        Tab {
             id: tab_id,
             url: normalized_url,
             title: default_title,
@@ -506,11 +507,75 @@ impl BrowserManager {
             can_go_back: false,
             can_go_forward: false,
             webview,
-        };
+        }
+    }
 
+    fn get_parked_content_bounds(&self) -> Rect {
+        let (width, height) = self.get_current_window_size();
+        let content_height = (height - self.get_header_height()).max(10.0);
+        Rect {
+            position: LogicalPosition::new(0.0, height + 1.0).into(),
+            size: LogicalSize::new(width, content_height).into(),
+        }
+    }
+
+    pub fn create_tab(&mut self, target_url: &str) -> u32 {
+        let new_tab = self.build_tab(target_url);
+        let tab_id = new_tab.id;
         self.tabs.push(new_tab);
         self.switch_tab(tab_id);
         tab_id
+    }
+
+    fn prewarm_settings_tab(&mut self) {
+        if self.prewarmed_settings_tab.is_none()
+            && !self.tabs.iter().any(|tab| Self::is_settings_url(&tab.url))
+        {
+            let tab = self.build_tab("titan://settings");
+            let _ = tab.webview.set_bounds(self.get_parked_content_bounds());
+            let _ = tab.webview.set_visible(true);
+            self.prewarmed_settings_tab = Some(tab);
+        }
+    }
+
+    fn open_settings_view(&mut self, view: &str) {
+        let target_id =
+            if let Some(tab) = self.tabs.iter().find(|tab| Self::is_settings_url(&tab.url)) {
+                tab.id
+            } else if let Some(tab) = self.prewarmed_settings_tab.take() {
+                let tab_id = tab.id;
+                self.tabs.push(tab);
+                tab_id
+            } else {
+                let target_url = match view {
+                    "themes" => "titan://themes",
+                    "privacy" => "titan://privacy",
+                    "adblock" => "titan://adblock",
+                    _ => "titan://settings",
+                };
+                self.create_tab(target_url);
+                return;
+            };
+
+        if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == target_id) {
+            tab.title = match view {
+                "themes" => "Themes",
+                "privacy" => "Privacy & Security",
+                "adblock" => "AdBlock & Shields",
+                _ => "Settings",
+            }
+            .into();
+        }
+
+        self.switch_tab(target_id);
+        self.sync_settings_tabs();
+        let script = desktop_command(serde_json::json!({
+            "type": "switchSettingsView",
+            "view": view,
+        }));
+        if let Some(tab) = self.tabs.iter().find(|tab| tab.id == target_id) {
+            let _ = tab.webview.evaluate_script(&script);
+        }
     }
 
     pub fn switch_tab(&mut self, target_id: u32) {
@@ -546,7 +611,14 @@ impl BrowserManager {
     pub fn close_tab(&mut self, target_id: u32) {
         if let Some(pos) = self.tabs.iter().position(|t| t.id == target_id) {
             let was_active = self.active_tab_id == Some(target_id);
-            self.tabs.remove(pos);
+            let closed_tab = self.tabs.remove(pos);
+            if Self::is_settings_url(&closed_tab.url) {
+                let _ = closed_tab
+                    .webview
+                    .set_bounds(self.get_parked_content_bounds());
+                let _ = closed_tab.webview.set_visible(true);
+                self.prewarmed_settings_tab = Some(closed_tab);
+            }
 
             if self.tabs.is_empty() {
                 // If all tabs closed, create a fresh New Tab
@@ -953,6 +1025,12 @@ impl BrowserManager {
                 let _ = tab.webview.set_visible(false);
             }
         }
+
+        let parked_bounds = self.get_parked_content_bounds();
+        if let Some(tab) = &self.prewarmed_settings_tab {
+            let _ = tab.webview.set_bounds(parked_bounds);
+            let _ = tab.webview.set_visible(true);
+        }
     }
 
     pub fn handle_incoming_ipc(&mut self, msg_str: &str) {
@@ -1280,62 +1358,10 @@ impl BrowserManager {
                         }
                     }
                 }
-                IpcIncoming::OpenThemes => {
-                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url))
-                    {
-                        let tab_id = self.tabs[pos].id;
-                        self.switch_tab(tab_id);
-                        let script = desktop_command(serde_json::json!({
-                            "type": "switchSettingsView",
-                            "view": "themes",
-                        }));
-                        let _ = self.tabs[pos].webview.evaluate_script(&script);
-                    } else {
-                        self.create_tab("titan://themes");
-                    }
-                }
-                IpcIncoming::OpenPrivacy => {
-                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url))
-                    {
-                        let tab_id = self.tabs[pos].id;
-                        self.switch_tab(tab_id);
-                        let script = desktop_command(serde_json::json!({
-                            "type": "switchSettingsView",
-                            "view": "privacy",
-                        }));
-                        let _ = self.tabs[pos].webview.evaluate_script(&script);
-                    } else {
-                        self.create_tab("titan://privacy");
-                    }
-                }
-                IpcIncoming::OpenAdblock => {
-                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url))
-                    {
-                        let tab_id = self.tabs[pos].id;
-                        self.switch_tab(tab_id);
-                        let script = desktop_command(serde_json::json!({
-                            "type": "switchSettingsView",
-                            "view": "adblock",
-                        }));
-                        let _ = self.tabs[pos].webview.evaluate_script(&script);
-                    } else {
-                        self.create_tab("titan://adblock");
-                    }
-                }
-                IpcIncoming::OpenSettings => {
-                    if let Some(pos) = self.tabs.iter().position(|t| Self::is_settings_url(&t.url))
-                    {
-                        let tab_id = self.tabs[pos].id;
-                        self.switch_tab(tab_id);
-                        let script = desktop_command(serde_json::json!({
-                            "type": "switchSettingsView",
-                            "view": "general",
-                        }));
-                        let _ = self.tabs[pos].webview.evaluate_script(&script);
-                    } else {
-                        self.create_tab("titan://settings");
-                    }
-                }
+                IpcIncoming::OpenThemes => self.open_settings_view("themes"),
+                IpcIncoming::OpenPrivacy => self.open_settings_view("privacy"),
+                IpcIncoming::OpenAdblock => self.open_settings_view("adblock"),
+                IpcIncoming::OpenSettings => self.open_settings_view("general"),
                 IpcIncoming::ShowBookmarkContextMenu { url } => {
                     #[cfg(target_os = "windows")]
                     if let Some(cmd) =
@@ -1387,8 +1413,8 @@ impl BrowserManager {
 
     pub fn sync_full_state(&self) {
         if let Some(header) = &self.header_webview {
-            let state = IpcBrowserState {
-                tabs: self
+            let state = serde_json::json!({
+                "tabs": self
                     .tabs
                     .iter()
                     .map(|t| IpcTabInfo {
@@ -1399,20 +1425,12 @@ impl BrowserManager {
                         can_go_back: t.can_go_back,
                         can_go_forward: t.can_go_forward,
                     })
-                    .collect(),
-                active_tab_id: self.active_tab_id,
-                bookmarks: self.bookmarks.clone(),
-                modules: self.modules.clone(),
-                settings: self.settings.clone(),
-                zoom: self.zoom,
-                search_engine: self.settings.search_engine.clone(),
-                is_maximized: self.window.is_maximized(),
-                blocked_logs: self.blocked_logs.clone(),
-                adblock_logs: self.adblock_logs.clone(),
-                adblock_filter_lists: self.adblock_manager.get_filter_lists_info(),
-                adblock_stats: self.adblock_manager.get_stats(),
-                update_state: self.update_state.clone(),
-            };
+                    .collect::<Vec<_>>(),
+                "active_tab_id": self.active_tab_id,
+                "bookmarks": &self.bookmarks,
+                "settings": &self.settings,
+                "zoom": self.zoom,
+            });
 
             let script = desktop_command(serde_json::json!({
                 "type": "browserState",

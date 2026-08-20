@@ -183,23 +183,6 @@ impl Default for BrowserSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IpcBrowserState {
-    pub tabs: Vec<IpcTabInfo>,
-    pub active_tab_id: Option<u32>,
-    pub bookmarks: Vec<Bookmark>,
-    pub modules: Vec<BrowserModule>,
-    pub settings: BrowserSettings,
-    pub zoom: f64,
-    pub search_engine: String,
-    pub is_maximized: bool,
-    pub blocked_logs: Vec<BlockedRequestLog>,
-    pub adblock_logs: Vec<BlockedRequestLog>,
-    pub adblock_filter_lists: Vec<crate::adblock_engine::FilterListConfig>,
-    pub adblock_stats: crate::adblock_engine::AdblockStats,
-    pub update_state: crate::updater::UpdateState,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
 pub enum IpcIncoming {

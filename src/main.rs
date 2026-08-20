@@ -26,7 +26,12 @@ fn main() {
     let _ = std::fs::create_dir_all(&webview_data_dir);
     std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_data_dir);
 
-    let privacy_browser_args = privacy::webview2_browser_args();
+    let mut privacy_browser_args = privacy::webview2_browser_args();
+    if let Ok(port) = std::env::var("TITAN_PROFILE_PORT") {
+        if port.parse::<u16>().is_ok() {
+            privacy_browser_args.push_str(&format!(" --remote-debugging-port={port}"));
+        }
+    }
 
     std::env::set_var(
         "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
@@ -40,6 +45,7 @@ fn main() {
         .with_title("Titan Browser")
         .with_inner_size(LogicalSize::new(1300.0, 850.0))
         .with_min_inner_size(LogicalSize::new(600.0, 400.0))
+        .with_visible(false)
         .with_decorations(false) // Frameless modern browser top bar
         .build(&event_loop)
         .expect("Failed to create application window");
@@ -47,6 +53,7 @@ fn main() {
     let window = Arc::new(window);
     let mut browser = BrowserManager::new(window.clone(), proxy);
     browser.init();
+    window.set_visible(true);
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
