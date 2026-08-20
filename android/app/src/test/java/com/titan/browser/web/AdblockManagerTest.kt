@@ -5,10 +5,30 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.BeforeClass
 import org.junit.Test
 import java.io.File
 
 class AdblockManagerTest {
+
+    companion object {
+        @JvmStatic
+        @BeforeClass
+        fun initializeInjectionScript() {
+            AdblockManager.initializeInjectionScriptTemplate(androidAdblockScriptFile().readText())
+        }
+
+        private fun androidAdblockScriptFile(): File {
+            val candidates = listOf(
+                File("../../web-scripts/dist/android-adblock.js"),
+                File("../web-scripts/dist/android-adblock.js"),
+                File("web-scripts/dist/android-adblock.js")
+            )
+
+            return candidates.firstOrNull { it.exists() }
+                ?: error("Could not find generated Android adblock script from ${File(".").absolutePath}")
+        }
+    }
 
     @Serializable
     private data class AdblockContractCase(
@@ -360,7 +380,8 @@ class AdblockManagerTest {
         )
 
         assertEquals(true, defaultScript.contains("if (aggressiveMode) {"))
-        assertEquals(true, aggressiveScript.contains("const aggressiveMode = true;"))
+        assertEquals(true, defaultScript.contains("\"aggressiveMode\":false"))
+        assertEquals(true, aggressiveScript.contains("\"aggressiveMode\":true"))
     }
 
     private fun sharedContractFile(): File {

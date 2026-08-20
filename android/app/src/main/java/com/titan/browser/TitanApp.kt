@@ -4,11 +4,15 @@ import android.app.Application
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
+import com.titan.browser.web.AdblockManager
 import com.titan.browser.web.TitanWebViewFactory
 
 class TitanApp : Application() {
     override fun onCreate() {
         super.onCreate()
+
+        val adblockScript = assets.open("android-adblock.js").bufferedReader().use { it.readText() }
+        AdblockManager.initializeInjectionScriptTemplate(adblockScript)
 
         try {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)

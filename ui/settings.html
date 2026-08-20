@@ -1015,27 +1015,27 @@
 
     <!-- In-Page Navigation Tabs -->
     <div class="nav-tabs">
-      <button class="nav-tab-btn active" id="tabBtnGeneral" onclick="switchView('general')">
+      <button class="nav-tab-btn active" id="tabBtnGeneral">
         <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
           <circle cx="12" cy="12" r="3"></circle>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
         </svg>
         General Settings
       </button>
-      <button class="nav-tab-btn" id="tabBtnThemes" onclick="switchView('themes')">
+      <button class="nav-tab-btn" id="tabBtnThemes">
         <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
           <circle cx="12" cy="12" r="10"></circle>
           <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
         </svg>
         Themes &amp; Appearance
       </button>
-      <button class="nav-tab-btn" id="tabBtnPrivacy" onclick="switchView('privacy')">
+      <button class="nav-tab-btn" id="tabBtnPrivacy">
         <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
         </svg>
         Privacy &amp; Security
       </button>
-      <button class="nav-tab-btn" id="tabBtnAdblock" onclick="switchView('adblock')">
+      <button class="nav-tab-btn" id="tabBtnAdblock">
         <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
           <line x1="9" y1="9" x2="15" y2="15"></line>
@@ -1070,7 +1070,7 @@
               <div class="setting-desc">Used when entering queries directly in the address bar.</div>
             </div>
           </div>
-          <select class="setting-select" id="searchEngineSelect" onchange="changeSearchEngine(this.value)">
+          <select class="setting-select" id="searchEngineSelect">
             <option value="Google">Google</option>
             <option value="DuckDuckGo">DuckDuckGo</option>
             <option value="Bing">Bing</option>
@@ -1092,7 +1092,7 @@
             </div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="showBookmarksToggle" onchange="toggleBookmarksBar(this.checked)" />
+            <input type="checkbox" id="showBookmarksToggle" />
             <span class="slider"></span>
           </label>
         </div>
@@ -1126,10 +1126,10 @@
             </div>
           </div>
           <div class="update-actions">
-            <button class="btn-secondary-sm" id="updateOpenBtn" onclick="openUpdateDownload()" style="display: none;">Get Update</button>
-            <button class="btn-secondary-sm" id="updateCheckBtn" onclick="checkForUpdates()">Check Now</button>
+            <button class="btn-secondary-sm" id="updateOpenBtn" style="display: none;">Get Update</button>
+            <button class="btn-secondary-sm" id="updateCheckBtn">Check Now</button>
             <label class="switch">
-              <input type="checkbox" id="autoUpdateToggle" checked onchange="setAutoUpdate(this.checked)" />
+              <input type="checkbox" id="autoUpdateToggle" checked />
               <span class="slider"></span>
             </label>
           </div>
@@ -1193,7 +1193,7 @@
 
         <div class="themes-grid">
           <!-- 1. Titan Dark -->
-          <div class="theme-card active" data-theme="titan-dark" onclick="selectTheme('titan-dark')">
+          <div class="theme-card active" data-theme="titan-dark">
             <div class="theme-preview-box" style="background: #0f1015; border: 1px solid #272a38;">
               <div class="preview-mock-bar">
                 <div class="preview-dot" style="background: rgba(255,255,255,0.3);"></div>
@@ -1212,7 +1212,7 @@
           </div>
 
           <!-- 2. Midnight OLED -->
-          <div class="theme-card" data-theme="midnight" onclick="selectTheme('midnight')">
+          <div class="theme-card" data-theme="midnight">
             <div class="theme-preview-box" style="background: #000000; border: 1px solid #22222b;">
               <div class="preview-mock-bar">
                 <div class="preview-dot" style="background: rgba(255,255,255,0.3);"></div>
@@ -1231,7 +1231,7 @@
           </div>
 
           <!-- 3. Titan Daylight -->
-          <div class="theme-card" data-theme="titan-light" onclick="selectTheme('titan-light')">
+          <div class="theme-card" data-theme="titan-light">
             <div class="theme-preview-box" style="background: #f1f5f9; border: 1px solid #cbd5e1;">
               <div class="preview-mock-bar">
                 <div class="preview-dot" style="background: rgba(0,0,0,0.25);"></div>
@@ -1250,7 +1250,7 @@
           </div>
 
           <!-- 4. Cyber Neon -->
-          <div class="theme-card" data-theme="cyber-neon" onclick="selectTheme('cyber-neon')">
+          <div class="theme-card" data-theme="cyber-neon">
             <div class="theme-preview-box" style="background: #0d0b18; border: 1px solid #362c60;">
               <div class="preview-mock-bar">
                 <div class="preview-dot" style="background: #a855f7;"></div>
@@ -1269,7 +1269,7 @@
           </div>
 
           <!-- 5. Nordic Slate -->
-          <div class="theme-card" data-theme="nordic" onclick="selectTheme('nordic')">
+          <div class="theme-card" data-theme="nordic">
             <div class="theme-preview-box" style="background: #0f171c; border: 1px solid #293d4c;">
               <div class="preview-mock-bar">
                 <div class="preview-dot" style="background: #2dd4bf;"></div>
@@ -1288,7 +1288,7 @@
           </div>
 
           <!-- 6. Amber Sunset -->
-          <div class="theme-card" data-theme="amber" onclick="selectTheme('amber')">
+          <div class="theme-card" data-theme="amber">
             <div class="theme-preview-box" style="background: #141210; border: 1px solid #3f362e;">
               <div class="preview-mock-bar">
                 <div class="preview-dot" style="background: #f59e0b;"></div>
@@ -1312,12 +1312,12 @@
           <h3 class="section-title" style="font-size: 14.5px;">Accent Highlight Color</h3>
         </div>
         <div class="accent-swatches" id="accentSwatches">
-          <div class="accent-swatch active" style="background: #4e7cf6;" data-color="#4e7cf6" onclick="selectAccent('#4e7cf6')" title="Titan Blue"></div>
-          <div class="accent-swatch" style="background: #38bdf8;" data-color="#38bdf8" onclick="selectAccent('#38bdf8')" title="Cyber Cyan"></div>
-          <div class="accent-swatch" style="background: #10b981;" data-color="#10b981" onclick="selectAccent('#10b981')" title="Emerald Green"></div>
-          <div class="accent-swatch" style="background: #a855f7;" data-color="#a855f7" onclick="selectAccent('#a855f7')" title="Royal Purple"></div>
-          <div class="accent-swatch" style="background: #f59e0b;" data-color="#f59e0b" onclick="selectAccent('#f59e0b')" title="Amber Gold"></div>
-          <div class="accent-swatch" style="background: #ff4757;" data-color="#ff4757" onclick="selectAccent('#ff4757')" title="Crimson Red"></div>
+          <div class="accent-swatch active" style="background: #4e7cf6;" data-color="#4e7cf6" title="Titan Blue"></div>
+          <div class="accent-swatch" style="background: #38bdf8;" data-color="#38bdf8" title="Cyber Cyan"></div>
+          <div class="accent-swatch" style="background: #10b981;" data-color="#10b981" title="Emerald Green"></div>
+          <div class="accent-swatch" style="background: #a855f7;" data-color="#a855f7" title="Royal Purple"></div>
+          <div class="accent-swatch" style="background: #f59e0b;" data-color="#f59e0b" title="Amber Gold"></div>
+          <div class="accent-swatch" style="background: #ff4757;" data-color="#ff4757" title="Crimson Red"></div>
         </div>
       </div>
 
@@ -1359,7 +1359,7 @@
             </div>
           </div>
           <label class="switch">
-            <input type="checkbox" id="darkReaderToggle" onchange="toggleDarkReader(this.checked)" />
+            <input type="checkbox" id="darkReaderToggle" />
             <span class="slider"></span>
           </label>
         </div>
@@ -1586,7 +1586,7 @@
               <span class="setting-title" style="margin: 0;">Active Domain Block Rules</span>
               <span class="rules-badge" id="blockedRulesCount">25 rules active</span>
             </div>
-            <button class="btn-secondary-sm" onclick="resetPrivacyRules()" title="Reset to Titan default rules">
+            <button class="btn-secondary-sm" id="resetPrivacyRulesBtn" title="Reset to Titan default rules">
               <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
                 <polyline points="1 4 1 10 7 10"></polyline>
                 <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
@@ -1601,9 +1601,8 @@
               id="newBlockedDomainInput"
               class="rules-input"
               placeholder="e.g. tracker.example.com or analytics.subdomain.com"
-              onkeydown="if(event.key==='Enter') addBlockedDomain()"
             />
-            <button class="btn-primary-sm" onclick="addBlockedDomain()">
+            <button class="btn-primary-sm" id="addBlockedDomainBtn">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -1618,7 +1617,6 @@
               class="rules-input"
               style="padding: 6px 12px; font-size: 12px;"
               placeholder="Filter active rules..."
-              oninput="filterBlockedRules(this.value)"
             />
           </div>
 
@@ -1652,9 +1650,8 @@
               id="newWhitelistDomainInput"
               class="rules-input"
               placeholder="e.g. trusted-service.internal"
-              onkeydown="if(event.key==='Enter') addWhitelistedDomain()"
             />
-            <button class="btn-primary-sm" onclick="addWhitelistedDomain()" style="background: #10b981;">
+            <button class="btn-primary-sm" id="addWhitelistedDomainBtn" style="background: #10b981;">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -1693,7 +1690,7 @@
               <div id="clearDataStatus" class="privacy-status-banner" style="display: none;"></div>
             </div>
           </div>
-          <button class="btn-danger" id="clearBrowsingDataBtn" onclick="clearBrowsingData()">Clear All Data</button>
+          <button class="btn-danger" id="clearBrowsingDataBtn">Clear All Data</button>
         </div>
       </div>
     </div>
@@ -1776,9 +1773,8 @@
               id="newCustomRuleInput"
               class="rules-input"
               placeholder="e.g. ||badtracker.com^$script or example.com##.sponsor-banner or @@||site.com^"
-              onkeydown="if(event.key==='Enter') addCustomRule()"
             />
-            <button class="btn-primary-sm" onclick="addCustomRule()">
+            <button class="btn-primary-sm" id="addCustomRuleBtn">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -1912,7 +1908,7 @@
               <span class="setting-title" style="margin: 0;">Stopped Ad Requests</span>
               <span class="privacy-badge" id="adblockActivityCountBadge">0 ads blocked</span>
             </div>
-            <button class="btn-secondary-sm" onclick="clearAdblockLogs()" title="Clear activity log">
+            <button class="btn-secondary-sm" id="clearAdblockLogsBtn" title="Clear activity log">
               <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -1952,9 +1948,8 @@
               id="newAdblockWhitelistDomainInput"
               class="rules-input"
               placeholder="e.g. trusted-creator.org or news.example.com"
-              onkeydown="if(event.key==='Enter') addAdblockWhitelist()"
             />
-            <button class="btn-primary-sm" onclick="addAdblockWhitelist()" style="background: #10b981;">
+            <button class="btn-primary-sm" id="addAdblockWhitelistBtn" style="background: #10b981;">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>

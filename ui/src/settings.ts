@@ -264,7 +264,7 @@
     }
   };
 
-  // Expose global methods for inline HTML onclick attributes
+  // Expose the methods used by the native browser integration.
   (window as unknown as Record<string, unknown>).switchView = switchView;
   (window as unknown as Record<string, unknown>).selectTheme = selectTheme;
   (window as unknown as Record<string, unknown>).selectAccent = selectAccent;
@@ -330,6 +330,12 @@
       });
     }
 
+    const autoUpdateToggle = document.getElementById('autoUpdateToggle') as HTMLInputElement | null;
+    autoUpdateToggle?.addEventListener('change', () => setAutoUpdate(autoUpdateToggle.checked));
+
+    document.getElementById('updateCheckBtn')?.addEventListener('click', checkForUpdates);
+    document.getElementById('updateOpenBtn')?.addEventListener('click', openUpdateDownload);
+
     const drToggle = document.getElementById('darkReaderToggle') as HTMLInputElement | null;
     if (drToggle) {
       drToggle.addEventListener('change', (e) => {
@@ -382,6 +388,58 @@
     if (clearBtn) {
       clearBtn.addEventListener('click', clearBrowsingData);
     }
+
+    const bindEnter = (inputId: string, action: () => void) => {
+      document.getElementById(inputId)?.addEventListener('keydown', (event) => {
+        if ((event as KeyboardEvent).key === 'Enter') action();
+      });
+    };
+
+    bindEnter('newBlockedDomainInput', addBlockedDomain);
+    bindEnter('newWhitelistDomainInput', addWhitelistedDomain);
+    bindEnter('newCustomRuleInput', addCustomRule);
+    bindEnter('newAdblockWhitelistDomainInput', addAdblockWhitelist);
+
+    document.getElementById('addBlockedDomainBtn')?.addEventListener('click', addBlockedDomain);
+    document.getElementById('addWhitelistedDomainBtn')?.addEventListener('click', addWhitelistedDomain);
+    document.getElementById('addCustomRuleBtn')?.addEventListener('click', addCustomRule);
+    document.getElementById('addAdblockWhitelistBtn')?.addEventListener('click', addAdblockWhitelist);
+    document.getElementById('resetPrivacyRulesBtn')?.addEventListener('click', resetPrivacyRules);
+    document.getElementById('clearAdblockLogsBtn')?.addEventListener('click', clearAdblockLogs);
+
+    document.getElementById('blockedRulesSearch')?.addEventListener('input', (event) => {
+      filterBlockedRules((event.target as HTMLInputElement).value);
+    });
+
+    document.addEventListener('click', (event) => {
+      const target = (event.target as Element | null)?.closest<HTMLElement>('[data-settings-action]');
+      if (!target) return;
+
+      const value = decodeURIComponent(target.dataset.value || '');
+      switch (target.dataset.settingsAction) {
+        case 'remove-blocked-domain':
+          removeBlockedDomain(value);
+          break;
+        case 'remove-whitelisted-domain':
+          removeWhitelistedDomain(value);
+          break;
+        case 'remove-custom-rule':
+          removeCustomRule(target.dataset.value || '');
+          break;
+        case 'remove-adblock-whitelist':
+          removeAdblockWhitelist(value);
+          break;
+      }
+    });
+
+    document.addEventListener('change', (event) => {
+      const target = (event.target as Element | null)?.closest<HTMLInputElement>(
+        'input[data-settings-action="toggle-filter-list"]'
+      );
+      if (target?.dataset.value) {
+        toggleFilterList(decodeURIComponent(target.dataset.value), target.checked);
+      }
+    });
   });
 
   // Privacy Blocklist & Whitelist Management
@@ -448,7 +506,7 @@
               </span>
               <span class="rule-domain-text">${domain}</span>
             </div>
-            <button class="rule-delete-btn" onclick="removeBlockedDomain('${domain}')" title="Remove rule">
+            <button class="rule-delete-btn" data-settings-action="remove-blocked-domain" data-value="${encodeURIComponent(domain)}" title="Remove rule">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -488,7 +546,7 @@
               </span>
               <span class="rule-domain-text">${domain}</span>
             </div>
-            <button class="rule-delete-btn" onclick="removeWhitelistedDomain('${domain}')" title="Remove whitelist exception">
+            <button class="rule-delete-btn" data-settings-action="remove-whitelisted-domain" data-value="${encodeURIComponent(domain)}" title="Remove whitelist exception">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -593,7 +651,7 @@
               <div class="filter-list-desc">${list.description}</div>
             </div>
             <label class="switch" style="flex-shrink: 0;">
-              <input type="checkbox" ${list.enabled ? 'checked' : ''} onchange="toggleFilterList('${list.id}', this.checked)" />
+              <input type="checkbox" ${list.enabled ? 'checked' : ''} data-settings-action="toggle-filter-list" data-value="${encodeURIComponent(list.id)}" />
               <span class="slider"></span>
             </label>
           </div>
@@ -634,7 +692,7 @@
               </span>
               <span class="rule-domain-text" title="${rule}">${rule}</span>
             </div>
-            <button class="rule-delete-btn" onclick="removeCustomRule('${safeRule}')" title="Remove rule">
+            <button class="rule-delete-btn" data-settings-action="remove-custom-rule" data-value="${safeRule}" title="Remove rule">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -674,7 +732,7 @@
               </span>
               <span class="rule-domain-text">${domain}</span>
             </div>
-            <button class="rule-delete-btn" onclick="removeAdblockWhitelist('${domain}')" title="Remove whitelist exception">
+            <button class="rule-delete-btn" data-settings-action="remove-adblock-whitelist" data-value="${encodeURIComponent(domain)}" title="Remove whitelist exception">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -881,6 +939,23 @@
       renderAdblockStats();
     }
   };
+
+  function initializeFromEmbeddedState() {
+    const stateElement = document.getElementById('titan-settings-state');
+    if (!stateElement?.textContent || !window.initSettings) return;
+
+    try {
+      window.initSettings(JSON.parse(stateElement.textContent) as SettingsInitState);
+    } catch (error) {
+      console.error('Failed to read the initial settings state:', error);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeFromEmbeddedState);
+  } else {
+    initializeFromEmbeddedState();
+  }
 
   (window as unknown as Record<string, unknown>).addBlockedDomain = addBlockedDomain;
   (window as unknown as Record<string, unknown>).removeBlockedDomain = removeBlockedDomain;

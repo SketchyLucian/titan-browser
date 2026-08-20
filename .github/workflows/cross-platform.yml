@@ -19,6 +19,18 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install TypeScript dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
       - name: Run desktop tests
         run: cargo test
 
@@ -36,6 +48,15 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install TypeScript dependencies
+        run: npm ci
 
       - name: Make Gradle executable
         run: chmod +x android/gradlew

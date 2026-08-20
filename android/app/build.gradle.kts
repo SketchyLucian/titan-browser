@@ -5,6 +5,28 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val repositoryRoot = rootProject.projectDir.parentFile
+val generatedWebAssets = layout.buildDirectory.dir("generated/web-assets")
+val npmExecutable = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+    "npm.cmd"
+} else {
+    "npm"
+}
+
+val buildWebScripts by tasks.registering(Exec::class) {
+    workingDir(repositoryRoot)
+    commandLine(npmExecutable, "run", "build:web-scripts")
+    inputs.dir(repositoryRoot.resolve("web-scripts/src"))
+    inputs.file(repositoryRoot.resolve("web-scripts/tsconfig.json"))
+    outputs.dir(repositoryRoot.resolve("web-scripts/dist"))
+}
+
+val syncAndroidWebScript by tasks.registering(Sync::class) {
+    dependsOn(buildWebScripts)
+    from(repositoryRoot.resolve("web-scripts/dist/android-adblock.js"))
+    into(generatedWebAssets)
+}
+
 android {
     namespace = "com.titan.browser"
     compileSdk = 35
@@ -56,6 +78,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    sourceSets.getByName("main").assets.srcDir(generatedWebAssets)
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(syncAndroidWebScript)
 }
 
 dependencies {
