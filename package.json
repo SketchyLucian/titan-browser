@@ -1,6 +1,6 @@
 {
   "name": "titan-browser-ui",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "scripts": {
     "build": "npm run build:ui && npm run build:web-scripts",
