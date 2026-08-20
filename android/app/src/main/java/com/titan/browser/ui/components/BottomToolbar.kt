@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -253,12 +254,17 @@ fun BottomToolbar(
             Spacer(modifier = Modifier.width(4.dp))
 
             // Three-Dots Menu Button
-            IconButton(
-                onClick = {
-                    focusManager.clearFocus()
-                    onMenuClick()
-                },
-                modifier = Modifier.size(36.dp)
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        focusManager.clearFocus()
+                        onMenuClick()
+                    },
+                contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,

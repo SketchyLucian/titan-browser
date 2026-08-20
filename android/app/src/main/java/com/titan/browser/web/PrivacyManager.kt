@@ -75,14 +75,27 @@ object PrivacyManager {
         val blockedDomains: List<String>
     )
 
+    private data class CachedScript(
+        val config: ScriptConfig,
+        val script: String
+    )
+
+    private val sortedBlockedTelemetryDomains = blockedTelemetryDomains.sorted()
+
     @Volatile
     private var injectionScriptTemplate: String? = null
+
+    @Volatile
+    private var cachedScript: CachedScript? = null
 
     fun initializeInjectionScriptTemplate(template: String) {
         require(template.contains(INJECTION_CONFIG_PLACEHOLDER)) {
             "Android privacy script is missing its configuration placeholder"
         }
-        injectionScriptTemplate = template
+        synchronized(this) {
+            injectionScriptTemplate = template
+            cachedScript = null
+        }
     }
 
     fun getInjectionScript(settings: BrowserSettings): String {
@@ -93,9 +106,15 @@ object PrivacyManager {
             blockWebRtc = settings.blockWebRtc,
             reduceFingerprinting = settings.reduceFingerprinting,
             blockHyperlinkAuditing = settings.blockHyperlinkAuditing,
-            blockedDomains = blockedTelemetryDomains.sorted()
+            blockedDomains = sortedBlockedTelemetryDomains
         )
-        return template.replace(INJECTION_CONFIG_PLACEHOLDER, Json.encodeToString(config))
+        cachedScript?.takeIf { it.config == config }?.let { return it.script }
+
+        return synchronized(this) {
+            cachedScript?.takeIf { it.config == config }?.script ?: template
+                .replace(INJECTION_CONFIG_PLACEHOLDER, Json.encodeToString(config))
+                .also { script -> cachedScript = CachedScript(config, script) }
+        }
     }
 
     fun navigationHeaders(settings: BrowserSettings): Map<String, String> = buildMap {
@@ -104,10 +123,13 @@ object PrivacyManager {
     }
 
     fun isBlockedTelemetryHost(host: String?): Boolean {
-        val normalizedHost = host.orEmpty().trim().trimEnd('.').lowercase()
-        if (normalizedHost.isEmpty()) return false
-        return blockedTelemetryDomains.any { domain ->
-            normalizedHost == domain || normalizedHost.endsWith(".$domain")
+        var candidate = host.orEmpty().trim().trimEnd('.').lowercase()
+        while (candidate.isNotEmpty()) {
+            if (candidate in blockedTelemetryDomains) return true
+            val dot = candidate.indexOf('.')
+            if (dot < 0) return false
+            candidate = candidate.substring(dot + 1)
         }
+        return false
     }
 }

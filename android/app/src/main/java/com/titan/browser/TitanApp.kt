@@ -1,14 +1,20 @@
 package com.titan.browser
 
 import android.app.Application
-import android.os.Handler
-import android.os.Looper
-import android.webkit.WebView
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewOutcomeReceiver
+import androidx.webkit.WebViewStartUpConfig
+import androidx.webkit.WebViewStartUpResult
+import androidx.webkit.WebViewStartupException
 import com.titan.browser.web.AdblockManager
 import com.titan.browser.web.PrivacyManager
-import com.titan.browser.web.TitanWebViewFactory
+import java.util.concurrent.Executors
 
 class TitanApp : Application() {
+    private val webViewStartupExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "titan-webview-startup")
+    }
+
     override fun onCreate() {
         super.onCreate()
 
@@ -17,26 +23,22 @@ class TitanApp : Application() {
         val privacyScript = assets.open("android-privacy.js").bufferedReader().use { it.readText() }
         PrivacyManager.initializeInjectionScriptTemplate(privacyScript)
 
-        try {
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY)
-        } catch (_: Exception) {
-        }
+        val startupConfig = WebViewStartUpConfig.Builder(webViewStartupExecutor)
+            .setShouldRunUiThreadStartUpTasks(false)
+            .build()
+        WebViewCompat.startUpWebView(
+            this,
+            startupConfig,
+            object : WebViewOutcomeReceiver<WebViewStartUpResult, WebViewStartupException> {
+                override fun onResult(result: WebViewStartUpResult) {
+                    webViewStartupExecutor.shutdown()
+                }
 
-        // Enable WebView debugging in debug builds
-        if (BuildConfig.DEBUG) {
-            WebView.setWebContentsDebuggingEnabled(true)
-        }
-
-        // Pre-warm Chromium engine, V8 JIT runtime, and GPU pipelines
-        // by initializing a background instance as soon as the main looper is idle.
-        Handler(Looper.getMainLooper()).post {
-            try {
-                val warmupWebView = TitanWebViewFactory.createWebView(this)
-                warmupWebView.loadUrl("about:blank")
-                warmupWebView.destroy()
-            } catch (_: Exception) {
-                // Non-fatal if system webview provider is updating
+                override fun onError(error: WebViewStartupException) {
+                    // WebView falls back to normal on-demand startup after a provider failure.
+                    webViewStartupExecutor.shutdown()
+                }
             }
-        }
+        )
     }
 }

@@ -23,7 +23,7 @@ class TitanWebViewClient(
 ) : WebViewClient() {
 
     @Volatile
-    private var currentPageUrl: String = ""
+    private var currentPageHost: String = ""
 
     @Volatile
     private var pageGeneration = 0L
@@ -35,15 +35,16 @@ class TitanWebViewClient(
         val rawUrl = request?.url?.toString() ?: return false
         val settings = settingsProvider()
         val url = if (settings.stripTrackingParameters) UrlUtils.stripTrackingParameters(rawUrl) else rawUrl
+        val navigationHeaders = PrivacyManager.navigationHeaders(settings)
 
         // Handle standard web protocols internally
         if (url.startsWith("http://") || url.startsWith("https://") ||
             url.startsWith("about:") || url.startsWith("file://")
         ) {
             if (request.isForMainFrame && request.method.equals("GET", ignoreCase = true) &&
-                (url != rawUrl || PrivacyManager.navigationHeaders(settings).isNotEmpty())
+                (url != rawUrl || navigationHeaders.isNotEmpty())
             ) {
-                view?.loadUrl(url, PrivacyManager.navigationHeaders(settings))
+                view?.loadUrl(url, navigationHeaders)
                 return true
             }
             return false
@@ -62,6 +63,17 @@ class TitanWebViewClient(
     }
 
     companion object {
+        private val emptyBody = ByteArray(0)
+        private val adblockHeaders = mapOf(
+            "Cache-Control" to "no-store",
+            "Content-Length" to "0",
+            "X-Titan-Adblock" to "1"
+        )
+        private val privacyHeaders = mapOf(
+            "Cache-Control" to "no-store",
+            "Content-Length" to "0",
+            "X-Titan-Privacy" to "1"
+        )
         private val injectionExecutor = Executors.newFixedThreadPool(2) { runnable ->
             Thread(runnable, "titan-adblock-script").apply {
                 isDaemon = true
@@ -82,12 +94,8 @@ class TitanWebViewClient(
                 "UTF-8",
                 statusCode,
                 reasonPhrase,
-                mapOf(
-                    "Cache-Control" to "no-store",
-                    "Content-Length" to "0",
-                    "X-Titan-$protection" to "1"
-                ),
-                ByteArrayInputStream(ByteArray(0))
+                if (protection == "Privacy") privacyHeaders else adblockHeaders,
+                ByteArrayInputStream(emptyBody)
             )
         }
     }
@@ -96,38 +104,42 @@ class TitanWebViewClient(
         view: WebView?,
         request: WebResourceRequest?
     ): WebResourceResponse? {
-        val settings = settingsProvider()
-        if (request == null) {
-            return null
-        }
+        if (request == null) return null
 
-        val uri = request.url ?: return super.shouldInterceptRequest(view, request)
-        val host = uri.host ?: ""
+        val uri = request.url ?: return null
+        val host = uri.host?.lowercase().orEmpty()
 
         // Fast-path bypass for benchmarks and local hosts
         if (host.isEmpty() || host.contains("browserbench") || host.contains("speedometer") ||
             host.contains("localhost") || host.contains("127.0.0.1")
         ) {
-            return super.shouldInterceptRequest(view, request)
+            return null
         }
 
+        val settings = settingsProvider()
         val reqUrl = uri.toString()
-        val pageUrl = request.requestHeaders["Referer"].orEmpty().ifBlank { currentPageUrl }
-        val requestType = inferRequestType(reqUrl, request.isForMainFrame)
+        val requestType = inferRequestType(uri, request.isForMainFrame)
         if (PrivacyManager.isBlockedTelemetryHost(host)) {
             return blockedResponse(requestType, "Privacy")
         }
-        if (settings.adblockEnabled && AdblockManager.isBlockedUrl(reqUrl, settings, pageUrl, requestType)) {
+        if (settings.adblockEnabled && AdblockManager.isBlockedRequest(
+                url = reqUrl,
+                requestHost = host,
+                settings = settings,
+                sourceHost = currentPageHost,
+                requestType = requestType
+            )
+        ) {
             return blockedResponse(requestType)
         }
 
-        return super.shouldInterceptRequest(view, request)
+        return null
     }
 
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
         if (url != null) {
-            currentPageUrl = url
+            currentPageHost = Uri.parse(url).host?.lowercase().orEmpty()
             onPageStartedCallback(url)
             val settings = settingsProvider()
             if (view != null) {
@@ -149,7 +161,7 @@ class TitanWebViewClient(
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
         if (url != null && view != null) {
-            currentPageUrl = url
+            currentPageHost = Uri.parse(url).host?.lowercase().orEmpty()
             onPageFinishedCallback(url, view.canGoBack(), view.canGoForward())
         }
     }
@@ -189,21 +201,20 @@ class TitanWebViewClient(
         }
     }
 
-    private fun inferRequestType(url: String, isMainFrame: Boolean): String {
+    private fun inferRequestType(uri: Uri, isMainFrame: Boolean): String {
         if (isMainFrame) return "document"
 
-        val lower = url.lowercase()
+        val lower = uri.path.orEmpty().lowercase()
         return when {
-            lower.endsWith(".js") || lower.contains(".js?") -> "script"
-            lower.endsWith(".css") || lower.contains(".css?") -> "stylesheet"
+            lower.endsWith(".js") -> "script"
+            lower.endsWith(".css") -> "stylesheet"
             lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
                 lower.endsWith(".gif") || lower.endsWith(".webp") || lower.endsWith(".svg") ||
-                lower.contains(".png?") || lower.contains(".jpg?") || lower.contains(".jpeg?") ||
-                lower.contains(".gif?") || lower.contains(".webp?") || lower.contains(".svg?") -> "image"
+                lower.endsWith(".avif") -> "image"
             lower.endsWith(".mp4") || lower.endsWith(".webm") || lower.endsWith(".m3u8") ||
-                lower.contains(".mp4?") || lower.contains(".webm?") || lower.contains(".m3u8?") -> "media"
+                lower.endsWith(".mp3") || lower.endsWith(".m4a") -> "media"
             lower.endsWith(".woff") || lower.endsWith(".woff2") || lower.endsWith(".ttf") ||
-                lower.contains(".woff?") || lower.contains(".woff2?") || lower.contains(".ttf?") -> "font"
+                lower.endsWith(".otf") -> "font"
             lower.contains("/xhr") || lower.contains("/api/") || lower.contains("log_event") -> "xhr"
             else -> "other"
         }

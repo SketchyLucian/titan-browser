@@ -1,6 +1,7 @@
 package com.titan.browser.viewmodel
 
 import android.app.Application
+import android.content.ComponentCallbacks2
 import android.graphics.Bitmap
 import android.view.View
 import android.webkit.CookieManager
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -190,7 +192,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         webView.webChromeClient = TitanWebChromeClient(
             onProgressUpdate = { progress ->
                 if (_activeTabId.value == tabId) {
-                    _loadingProgress.value = progress
+                    if (progress == 100 || abs(progress - _loadingProgress.value) >= 5) {
+                        _loadingProgress.value = progress
+                    }
                     _isLoading.value = progress < 100
                 }
             },
@@ -258,22 +262,25 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
-        _tabs.value.forEach { tab ->
-            if (tab.id == tabId) {
-                tab.webView?.onResume()
-            } else if (tab.id == currentId) {
-                tab.webView?.onPause()
-            }
+        val nextTab = _tabs.value.firstOrNull { it.id == tabId } ?: return
+        _tabs.value.firstOrNull { it.id == currentId }?.webView?.onPause()
+        _activeTabId.value = tabId
+
+        val resumedTab = if (nextTab.webView == null && nextTab.url != "titan://newtab") {
+            val webView = createConfiguredWebView(nextTab.id)
+            val restoredTab = nextTab.copy(webView = webView, isLoading = true)
+            updateTab(nextTab.id) { restoredTab }
+            webView.loadUrl(nextTab.url, PrivacyManager.navigationHeaders(_settings.value))
+            restoredTab
+        } else {
+            nextTab.webView?.onResume()
+            nextTab
         }
 
-        if (_tabs.value.any { it.id == tabId }) {
-            _activeTabId.value = tabId
-            val nextTab = _tabs.value.firstOrNull { it.id == tabId }
-            _isLoading.value = nextTab?.isLoading ?: false
-            _loadingProgress.value = if (nextTab?.isLoading == true) 50 else 100
-            _isToolbarVisible.value = true
-            _isTabGridVisible.value = false
-        }
+        _isLoading.value = resumedTab.isLoading
+        _loadingProgress.value = if (resumedTab.isLoading) 10 else 100
+        _isToolbarVisible.value = true
+        _isTabGridVisible.value = false
     }
 
     fun closeTab(tabId: String) {
@@ -559,6 +566,48 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _customFullscreenView.value = null
         customViewCallback?.onCustomViewHidden()
         customViewCallback = null
+    }
+
+    fun onHostResume() {
+        getActiveTab()?.webView?.apply {
+            resumeTimers()
+            onResume()
+        }
+    }
+
+    fun onHostPause() {
+        getActiveTab()?.webView?.apply {
+            onPause()
+            pauseTimers()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    fun onTrimMemory(level: Int) {
+        if (level < ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN
+        ) {
+            return
+        }
+
+        val activeId = _activeTabId.value
+        val currentTabs = _tabs.value
+        currentTabs.forEach { tab ->
+            if (tab.id != activeId) {
+                tab.webView?.apply {
+                    stopLoading()
+                    onPause()
+                    destroy()
+                }
+            }
+        }
+        _tabs.value = currentTabs.map { tab ->
+            if (tab.id != activeId && tab.webView != null) {
+                tab.copy(webView = null, isLoading = false, progress = 0)
+            } else {
+                tab
+            }
+        }
     }
 
     private fun updateToolbarVisibilityForScroll(scrollY: Int, oldScrollY: Int) {

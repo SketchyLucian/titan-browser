@@ -389,6 +389,7 @@ const config = __TITAN_ANDROID_ADBLOCK_CONFIG__;
 
         if (blockVideoAds && (currentHost.includes('youtube.com') || currentHost.includes('youtu.be'))) {
             function handleVideoAds() {
+                let foundAdUi = false;
                 try {
                     const skipSelectors = [
                         '.ytp-ad-skip-button',
@@ -403,11 +404,15 @@ const config = __TITAN_ANDROID_ADBLOCK_CONFIG__;
 
                     for (const sel of skipSelectors) {
                         const btn = document.querySelector(sel);
-                        if (btn) btn.click();
+                        if (btn) {
+                            foundAdUi = true;
+                            btn.click();
+                        }
                     }
 
                     const adElements = document.querySelectorAll('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
                     if (adElements.length > 0) {
+                        foundAdUi = true;
                         const videos = document.querySelectorAll('video');
                         videos.forEach(v => {
                             if (v && !isNaN(v.duration) && v.duration > 0) {
@@ -418,8 +423,20 @@ const config = __TITAN_ANDROID_ADBLOCK_CONFIG__;
                         });
                     }
                 } catch(e) {}
+                return foundAdUi;
             }
-            setInterval(handleVideoAds, 300);
+
+            let videoAdTimer = 0;
+            function scheduleVideoAdCheck(delay) {
+                window.clearTimeout(videoAdTimer);
+                videoAdTimer = window.setTimeout(() => {
+                    const foundAdUi = handleVideoAds();
+                    const nextDelay = document.hidden ? 5000 : (foundAdUi ? 250 : 1500);
+                    scheduleVideoAdCheck(nextDelay);
+                }, delay);
+            }
+            document.addEventListener('visibilitychange', () => scheduleVideoAdCheck(0));
+            scheduleVideoAdCheck(0);
         }
     } catch(e) {}
 })();
