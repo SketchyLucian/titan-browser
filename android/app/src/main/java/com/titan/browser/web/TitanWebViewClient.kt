@@ -11,6 +11,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.titan.browser.model.BrowserSettings
 import java.io.ByteArrayInputStream
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 class TitanWebViewClient(
     private val context: Context,
@@ -22,6 +24,12 @@ class TitanWebViewClient(
 
     @Volatile
     private var currentPageUrl: String = ""
+
+    @Volatile
+    private var pageGeneration = 0L
+
+    @Volatile
+    private var injectionTask: Future<*>? = null
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val rawUrl = request?.url?.toString() ?: return false
@@ -52,6 +60,12 @@ class TitanWebViewClient(
     }
 
     companion object {
+        private val injectionExecutor = Executors.newFixedThreadPool(2) { runnable ->
+            Thread(runnable, "titan-adblock-script").apply {
+                isDaemon = true
+            }
+        }
+
         private fun blockedResponse(requestType: String): WebResourceResponse {
             val isScriptLike = requestType == "script" || requestType == "subdocument"
             val statusCode = if (isScriptLike) 403 else 204
@@ -109,9 +123,11 @@ class TitanWebViewClient(
             onPageStartedCallback(url)
             val settings = settingsProvider()
             if (settings.adblockEnabled && view != null && !url.contains("browserbench") && !url.contains("speedometer")) {
-                val script = AdblockManager.getInjectionScript(settings, url)
-                if (script.isNotEmpty()) {
-                    view.evaluateJavascript(script, null)
+                val preparedScript = AdblockManager.getPreparedInjectionScript(settings, url)
+                if (preparedScript == null) {
+                    scheduleAdblockInjection(view, url, settings)
+                } else if (preparedScript.isNotEmpty()) {
+                    view.evaluateJavascript(preparedScript, null)
                 }
             }
         }
@@ -121,14 +137,27 @@ class TitanWebViewClient(
         super.onPageFinished(view, url)
         if (url != null && view != null) {
             currentPageUrl = url
-            val settings = settingsProvider()
-            if (settings.adblockEnabled && !url.contains("browserbench") && !url.contains("speedometer")) {
-                val script = AdblockManager.getInjectionScript(settings, url)
-                if (script.isNotEmpty()) {
+            onPageFinishedCallback(url, view.canGoBack(), view.canGoForward())
+        }
+    }
+
+    private fun scheduleAdblockInjection(
+        view: WebView,
+        url: String,
+        settings: BrowserSettings
+    ) {
+        val generation = pageGeneration + 1
+        pageGeneration = generation
+        injectionTask?.cancel(true)
+        injectionTask = injectionExecutor.submit {
+            val script = AdblockManager.getInjectionScript(settings, url)
+            if (script.isEmpty() || Thread.currentThread().isInterrupted) return@submit
+
+            view.post {
+                if (pageGeneration == generation && settingsProvider().adblockEnabled) {
                     view.evaluateJavascript(script, null)
                 }
             }
-            onPageFinishedCallback(url, view.canGoBack(), view.canGoForward())
         }
     }
 

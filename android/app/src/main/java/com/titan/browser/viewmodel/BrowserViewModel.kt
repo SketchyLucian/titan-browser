@@ -22,11 +22,13 @@ import com.titan.browser.web.TitanWebChromeClient
 import com.titan.browser.web.TitanWebViewClient
 import com.titan.browser.web.TitanWebViewFactory
 import com.titan.browser.web.UrlUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -88,11 +90,21 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private fun loadData() {
         viewModelScope.launch {
-            _bookmarks.value = storageManager.loadBookmarks()
             val filterSourceIds = AdblockManager.filterListSources.map { it.id }
-            AdblockManager.setCachedFilterLists(storageManager.loadAdblockFilterLists(filterSourceIds))
-            val loadedSettings = storageManager.loadSettings()
+            val (loadedBookmarks, cachedFilterLists, loadedSettings) = withContext(Dispatchers.IO) {
+                Triple(
+                    storageManager.loadBookmarks(),
+                    storageManager.loadAdblockFilterLists(filterSourceIds),
+                    storageManager.loadSettings()
+                )
+            }
+
+            _bookmarks.value = loadedBookmarks
             _settings.value = loadedSettings
+            withContext(Dispatchers.Default) {
+                AdblockManager.setCachedFilterLists(cachedFilterLists)
+                AdblockManager.prepare(loadedSettings)
+            }
             if (loadedSettings.adblockEnabled) {
                 refreshAdblockFilterLists()
             }
@@ -404,6 +416,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val newSettings = _settings.value.copy(adblockEnabled = enabled)
         _settings.value = newSettings
         storageManager.saveSettings(newSettings)
+        prepareAdblockRules(newSettings)
     }
 
     fun toggleBlockVideoAds(enabled: Boolean) {
@@ -441,15 +454,28 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val newSettings = _settings.value.copy(adblockFilterLists = current)
         _settings.value = newSettings
         storageManager.saveSettings(newSettings)
+        prepareAdblockRules(newSettings)
     }
 
     fun refreshAdblockFilterLists() {
         viewModelScope.launch {
             val result = AdblockFilterUpdater.update(AdblockManager.filterListSources)
-            result.updated.forEach { (id, content) ->
-                storageManager.saveAdblockFilterList(id, content)
-                AdblockManager.setCachedFilterList(id, content)
+            withContext(Dispatchers.IO) {
+                result.updated.forEach { (id, content) ->
+                    storageManager.saveAdblockFilterList(id, content)
+                }
             }
+            withContext(Dispatchers.Default) {
+                AdblockManager.setCachedFilterLists(result.updated)
+                AdblockManager.prepare(_settings.value)
+            }
+        }
+    }
+
+    private fun prepareAdblockRules(settings: BrowserSettings) {
+        if (!settings.adblockEnabled) return
+        viewModelScope.launch(Dispatchers.Default) {
+            AdblockManager.prepare(settings)
         }
     }
 

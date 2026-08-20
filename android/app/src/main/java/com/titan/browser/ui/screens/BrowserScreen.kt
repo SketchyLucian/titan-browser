@@ -90,7 +90,6 @@ fun BrowserScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .imePadding()
         ) {
             // Find in page bar (if active)
             if (isFindInPageVisible) {

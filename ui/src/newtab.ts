@@ -67,14 +67,30 @@ interface NewTabInitState {
     });
   }
 
+  function initializeFromEmbeddedState() {
+    const stateElement = document.getElementById('titan-newtab-state');
+    if (!stateElement?.textContent) return;
+
+    try {
+      initNewTab(JSON.parse(stateElement.textContent) as NewTabInitState);
+    } catch (error) {
+      console.error('Failed to read the initial new-tab state:', error);
+    }
+  }
+
+  function initializePage() {
+    setupEventListeners();
+    initializeFromEmbeddedState();
+  }
+
   // Global methods
   (window as unknown as Record<string, unknown>).navigate = navigate;
   (window as unknown as Record<string, unknown>).handleSearch = handleSearch;
   (window as unknown as Record<string, unknown>).initNewTab = initNewTab;
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setupEventListeners);
+    document.addEventListener('DOMContentLoaded', initializePage);
   } else {
-    setupEventListeners();
+    initializePage();
   }
 })();

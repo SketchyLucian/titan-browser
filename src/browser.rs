@@ -14,6 +14,19 @@ use wry::{PageLoadEvent, Rect, WebView, WebViewBuilder};
 pub const HEADER_HEIGHT_COLLAPSED: f64 = 76.0;
 pub const HEADER_HEIGHT_EXPANDED: f64 = 102.0;
 
+fn render_typescript(template: &str, placeholder: &str, config: serde_json::Value) -> String {
+    let config_json = serde_json::to_string(&config).unwrap_or_else(|_| "{}".into());
+    template.replace(placeholder, &config_json)
+}
+
+fn desktop_command(command: serde_json::Value) -> String {
+    render_typescript(
+        include_str!("../web-scripts/dist/desktop-command.js"),
+        "__TITAN_DESKTOP_COMMAND__",
+        command,
+    )
+}
+
 #[derive(Debug)]
 pub enum UserEvent {
     Ipc(String),
@@ -175,11 +188,15 @@ impl BrowserManager {
             "update_state": self.update_state,
             "active_section": active_section,
         }))
-        .unwrap_or_else(|_| "{}".into());
+        .unwrap_or_else(|_| "{}".into())
+        .replace('<', "\\u003c");
 
         html_themed.replace(
             "<script src=\"settings.js\"></script>",
-            &format!("<script>{}</script><script>(function(){{ function run(){{ window.initSettings && window.initSettings({}); }} if (document.readyState === 'loading') {{ window.addEventListener('DOMContentLoaded', run); }} else {{ run(); }} }})();</script>", js, state_json)
+            &format!(
+                "<script id=\"titan-settings-state\" type=\"application/json\">{}</script><script>{}</script>",
+                state_json, js
+            ),
         )
     }
 
@@ -196,11 +213,15 @@ impl BrowserManager {
             "accent_color": self.settings.accent_color,
             "search_engine": self.settings.search_engine,
         }))
-        .unwrap_or_else(|_| "{}".into());
+        .unwrap_or_else(|_| "{}".into())
+        .replace('<', "\\u003c");
 
         html_themed.replace(
             "<script src=\"newtab.js\"></script>",
-            &format!("<script>{}</script><script>(function(){{ function run(){{ window.initNewTab && window.initNewTab({}); }} if (document.readyState === 'loading') {{ window.addEventListener('DOMContentLoaded', run); }} else {{ run(); }} }})();</script>", js, state_json)
+            &format!(
+                "<script id=\"titan-newtab-state\" type=\"application/json\">{}</script><script>{}</script>",
+                state_json, js
+            ),
         )
     }
 
@@ -274,589 +295,46 @@ impl BrowserManager {
     }
 
     pub fn get_theme_injection_script(&self) -> String {
-        let is_light = self.settings.theme == "titan-light";
-        let force_adaptation = self.is_module_enabled("dark_reader");
-
-        format!(
-            r#"
-            (function() {{
-                const isLight = {is_light};
-                const forceAdaptation = {force_adaptation};
-                const targetMode = isLight ? 'light' : 'dark';
-                const removeMode = isLight ? 'dark' : 'light';
-                const host = (window.location.hostname || '').toLowerCase();
-                const href = (window.location.href || '').toLowerCase();
-
-                // If on internal / blank URL, stop here
-                if (!host || href.startsWith('titan://') || href.startsWith('about:')) return;
-
-                // 1. Clean up any previous forced styles if adaptation is off
-                try {{
-                    const preCanvas = document.getElementById('titan-pre-dark-canvas');
-                    if (preCanvas) preCanvas.remove();
-                    const adaptStyle = document.getElementById('titan-theme-adaptation-style');
-                    if (!forceAdaptation && adaptStyle) adaptStyle.remove();
-                }} catch(e) {{}}
-
-                // 2. Document Root color-scheme & Meta Tag
-                try {{
-                    const applyColorScheme = () => {{
-                        if (document.documentElement) {{
-                            document.documentElement.style.colorScheme = targetMode;
-                        }}
-                    }};
-                    applyColorScheme();
-                    if (document.readyState === 'loading') {{
-                        document.addEventListener('DOMContentLoaded', applyColorScheme, {{ once: true }});
-                    }}
-                }} catch(e) {{}}
-
-                // 3. Framework & Library Integration
-                function applyFrameworkThemes() {{
-                    try {{
-                        const html = document.documentElement;
-                        const body = document.body;
-
-                        if (html) {{
-                            html.classList.remove(removeMode);
-                            html.classList.add(targetMode);
-
-                            ['data-theme', 'data-color-mode', 'data-bs-theme', 'data-mode', 'data-theme-mode'].forEach(attr => {{
-                                if (html.hasAttribute(attr)) {{
-                                    html.setAttribute(attr, targetMode);
-                                }}
-                            }});
-                        }}
-
-                        if (body) {{
-                            if (body.classList.contains('dark') || body.classList.contains('light')) {{
-                                body.classList.remove(removeMode);
-                                body.classList.add(targetMode);
-                            }}
-                            ['data-theme', 'data-color-mode', 'data-bs-theme', 'data-mode'].forEach(attr => {{
-                                if (body.hasAttribute(attr)) {{
-                                    body.setAttribute(attr, targetMode);
-                                }}
-                            }});
-                        }}
-                    }} catch(e) {{}}
-                }}
-
-                applyFrameworkThemes();
-                if (document.readyState === 'loading') {{
-                    document.addEventListener('DOMContentLoaded', applyFrameworkThemes, {{ once: true }});
-                }}
-
-                // 4. Major Website Adaptations
-                try {{
-                    const isYouTube = host.includes('youtube.com') || host.includes('youtu.be');
-                    if (isYouTube && document.documentElement) {{
-                        if (isLight) {{
-                            document.documentElement.removeAttribute('dark');
-                        }} else {{
-                            document.documentElement.setAttribute('dark', 'true');
-                        }}
-                    }}
-
-                    const isWikipedia = host.includes('wikipedia.org');
-                    if (isWikipedia && document.documentElement) {{
-                        document.documentElement.classList.remove(isLight ? 'skin-theme-clientpref-night' : 'skin-theme-clientpref-day');
-                        document.documentElement.classList.add(isLight ? 'skin-theme-clientpref-day' : 'skin-theme-clientpref-night');
-                    }}
-                }} catch(e) {{}}
-
-                // 5. Universal Webpage Theme Adaptation (Dark Reader) for light-only sites
-                if (forceAdaptation) {{
-                    function adaptTheme() {{
-                        const isNativelyAdaptive = host.includes('google.') || host.includes('youtube.com') || host.includes('youtu.be') || host.includes('github.com') || host.includes('gitlab.com') || host.includes('reddit.com') || host.includes('duckduckgo.com') || host.includes('bing.com') || host.includes('x.com') || host.includes('twitter.com') || host.includes('tauri.app') || host.includes('vitepress') || host.includes('docusaurus');
-                        if (isNativelyAdaptive) return;
-
-                        let el = document.getElementById('titan-theme-adaptation-style');
-                        if (!isLight) {{
-                            if (!el) {{
-                                el = document.createElement('style');
-                                el.id = 'titan-theme-adaptation-style';
-                                el.textContent = 'html {{ filter: invert(100%) hue-rotate(180deg) contrast(96%) brightness(96%) !important; background-color: #121316 !important; }} img, video, canvas, svg, iframe, [style*="background-image"], .html5-video-player, picture {{ filter: invert(100%) hue-rotate(180deg) contrast(104%) brightness(104%) !important; }}';
-                                (document.head || document.documentElement).appendChild(el);
-                            }}
-                        }} else {{
-                            if (el) el.remove();
-                        }}
-                    }}
-
-                    if (document.readyState === 'complete') {{
-                        adaptTheme();
-                    }} else {{
-                        window.addEventListener('load', adaptTheme, {{ once: true }});
-                    }}
-                }}
-            }})();
-            "#,
-            is_light = is_light,
-            force_adaptation = force_adaptation
+        render_typescript(
+            include_str!("../web-scripts/dist/desktop-theme.js"),
+            "__TITAN_DESKTOP_THEME_CONFIG__",
+            serde_json::json!({
+                "isLight": self.settings.theme == "titan-light",
+                "forceAdaptation": self.is_module_enabled("dark_reader"),
+            }),
         )
     }
 
     pub fn get_privacy_injection_script(&self) -> String {
-        let dnt = self.settings.do_not_track;
-        let gpc = self.settings.global_privacy_control;
-        let block_webrtc = self.settings.block_webrtc_leak;
-
-        format!(
-            r#"
-            (function() {{
-                try {{
-                    const dnt = {dnt};
-                    const gpc = {gpc};
-                    const blockWebrtc = {block_webrtc};
-
-                    if (dnt) {{
-                        try {{
-                            Object.defineProperty(navigator, 'doNotTrack', {{ get: () => '1', configurable: true }});
-                            Object.defineProperty(window, 'doNotTrack', {{ get: () => '1', configurable: true }});
-                        }} catch(e) {{}}
-                    }}
-
-                    if (gpc) {{
-                        try {{
-                            Object.defineProperty(navigator, 'globalPrivacyControl', {{ get: () => true, configurable: true }});
-                        }} catch(e) {{}}
-                    }}
-
-                    if (blockWebrtc) {{
-                        try {{
-                            if (window.RTCPeerConnection) {{
-                                const origSetLocalDesc = window.RTCPeerConnection.prototype.setLocalDescription;
-                                if (origSetLocalDesc) {{
-                                    window.RTCPeerConnection.prototype.setLocalDescription = function(desc) {{
-                                        if (desc && desc.sdp) {{
-                                            desc.sdp = desc.sdp.replace(/a=candidate:.+typ host .+\r\n/g, '');
-                                        }}
-                                        return origSetLocalDesc.call(this, desc);
-                                    }};
-                                }}
-                            }}
-                        }} catch(e) {{}}
-                    }}
-                }} catch(e) {{}}
-            }})();
-            "#,
-            dnt = dnt,
-            gpc = gpc,
-            block_webrtc = block_webrtc,
+        render_typescript(
+            include_str!("../web-scripts/dist/desktop-privacy.js"),
+            "__TITAN_DESKTOP_PRIVACY_CONFIG__",
+            serde_json::json!({
+                "doNotTrack": self.settings.do_not_track,
+                "globalPrivacyControl": self.settings.global_privacy_control,
+                "blockWebRtc": self.settings.block_webrtc_leak,
+            }),
         )
     }
 
     pub fn get_adblock_injection_script(&self, target_url: &str) -> String {
-        let enabled = self.settings.adblock_enabled;
-        let block_video_ads = self.settings.adblock_block_video_ads;
-        let cosmetic_filtering = self.settings.adblock_cosmetic_filtering;
-        let block_popups = self.settings.adblock_block_popups;
-        let aggressive_mode = self.settings.adblock_aggressive_mode;
-        let whitelisted_domains_json =
-            serde_json::to_string(&self.settings.adblock_whitelisted_domains)
-                .unwrap_or_else(|_| "[]".into());
-        let blocked_domains_json = serde_json::to_string(&self.settings.adblock_blocked_domains)
-            .unwrap_or_else(|_| "[]".into());
-
         let (dynamic_selectors, dynamic_scriptlet) =
             self.adblock_manager.get_cosmetic_resources(target_url);
-        let dynamic_selectors_json =
-            serde_json::to_string(&dynamic_selectors).unwrap_or_else(|_| "[]".into());
-        let scriptlet_code_json =
-            serde_json::to_string(&dynamic_scriptlet).unwrap_or_else(|_| "\"\"".into());
 
-        format!(
-            r#"
-            (function() {{
-                try {{
-                    const enabled = {enabled};
-                    if (!enabled) return;
-
-                    const blockVideoAds = {block_video_ads};
-                    const cosmeticFiltering = {cosmetic_filtering};
-                    const blockPopups = {block_popups};
-                    const aggressiveMode = {aggressive_mode};
-                    const AD_WHITELIST = {whitelisted_domains_json};
-                    const AD_DOMAINS = {blocked_domains_json};
-                    const DYNAMIC_SELECTORS = {dynamic_selectors_json};
-                    const SCRIPTLET_CODE = {scriptlet_code_json};
-
-                    const currentHost = (window.location.hostname || '').toLowerCase();
-                    const currentHref = (window.location.href || '').toLowerCase();
-
-                    if (!currentHost || currentHref.startsWith('titan://') || currentHref.startsWith('about:')) return;
-
-                    // Check if current website is whitelisted
-                    if (AD_WHITELIST.some(d => d && (currentHost === d.toLowerCase() || currentHost.endsWith('.' + d.toLowerCase())))) {{
-                        return; // Ad blocking disabled for this whitelisted site
-                    }}
-
-                    // Comprehensive Ad & Tracker Network Patterns (uBlock / EasyList / Popunder engines)
-                    const AD_NETWORKS_REGEX = /(^|\.)(monetag|adsterra|propellerads|hilltopads|clickadu|clckr|popcash|popads|exoclick|juicyads|trafficstars|ad-maven|adcash|smartadserver|histats|dtscout|propu\.sh|onclickbright|onclicksuper|deloton|highperformancegate|al5smvpt45|feedify|pushwoosh|pushassist|tsyndicate|etahub|bignox|trafficjunky|rtmark|in-page-push|adrotate|doubleclick|googleadservices|googlesyndication|adservice\.google|pagead|2mdn|adnxs|advertising\.com|rubiconproject|pubmatic|criteo|openx|bidswitch|indexexchange|amazon-adsystem|adroll|media\.net|moatads|outbrain|taboola|mgid|revcontent|inmobi|flashtalking|exponential|adform|adcolony|applovin|unityads|vungle|chartbeat|scorecardresearch|zedo|adblade|yieldmo|sharethrough|triplelift|teads|undertone|spotx|sovrn|sonobi|gumgum|quantserve|quantcount|lijit|adtech|tribalfusion|clicksor|buysellads|carbonads|serving-sys|eyeota|simpli\.fi|clarity\.ms|hotjar|fullstory|mouseflow|luckyorange|crazyegg|inspectlet|logrocket|smartlook|segment\.io|mixpanel|amplitude|heapanalytics|kissmetrics|woopra|branch\.io|appsflyer|adjust\.com|kochava|singular\.net)(\.|\/|$)/i;
-
-                    const AD_PATH_REGEX = /(\/ads?\.js|\/ad-banner\.|\/advertisement\.|\/banner_ads\/|\/pagead\/|&ad_type=|&ad_url=|&adurl=|\/popunder|\/pop_under|\/floating_ad|\/interstitial)/i;
-
-                    // Helper to match URL against ad/tracker rules
-                    function isBlockedUrl(testUrl, reqType) {{
-                        if (!testUrl || typeof testUrl !== 'string') return false;
-                        const lower = testUrl.toLowerCase();
-                        if (lower.startsWith('data:') || lower.startsWith('blob:') || lower.startsWith('about:')) return false;
-
-                        // Check whitelisted domains
-                        for (const w of AD_WHITELIST) {{
-                            if (w && (lower.includes('://' + w.toLowerCase()) || lower.includes('.' + w.toLowerCase() + '/'))) return false;
-                        }}
-
-                        // Match full ad networks regex
-                        if (AD_NETWORKS_REGEX.test(lower) || AD_PATH_REGEX.test(lower)) {{
-                            return true;
-                        }}
-
-                        // Check user custom domain list
-                        for (const d of AD_DOMAINS) {{
-                            if (d && (lower.includes('://' + d.toLowerCase()) || lower.includes('.' + d.toLowerCase()) || lower.includes('/' + d.toLowerCase()))) {{
-                                return true;
-                            }}
-                        }}
-
-                        if (aggressiveMode) {{
-                            if (lower.includes('adservice') || lower.includes('adserver') || lower.includes('telemetry') || lower.includes('tracking') || lower.includes('analytics') || lower.includes('pixel')) {{
-                                return true;
-                            }}
-                        }}
-
-                        return false;
-                    }}
-
-                    function reportBlocked(url, reqType) {{
-                        try {{
-                            let domain = '';
-                            try {{
-                                domain = new URL(url, window.location.href).hostname;
-                            }} catch(e) {{
-                                domain = currentHost;
-                            }}
-                            if (window.ipc && window.ipc.postMessage) {{
-                                window.ipc.postMessage(JSON.stringify({{
-                                    type: 'ReportBlockedAd',
-                                    domain: domain || currentHost,
-                                    url: (url || '').substring(0, 300),
-                                    req_type: reqType || 'other'
-                                }}));
-                            }}
-                        }} catch(e) {{}}
-                    }}
-
-                    // 1. Defuse Notification Spam & Scam Prompts (Fake Robot Captchas)
-                    if (window.Notification) {{
-                        try {{
-                            window.Notification.requestPermission = function() {{
-                                return Promise.resolve('denied');
-                            }};
-                            Object.defineProperty(window.Notification, 'permission', {{
-                                get: function() {{ return 'denied'; }},
-                                configurable: true
-                            }});
-                        }} catch(e) {{}}
-                    }}
-
-                    // 2. Network Level Interception: window.fetch Hook
-                    if (window.fetch) {{
-                        const origFetch = window.fetch;
-                        window.fetch = async function(...args) {{
-                            const reqUrl = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
-                            if (isBlockedUrl(reqUrl, 'fetch')) {{
-                                reportBlocked(reqUrl, 'fetch');
-                                throw new TypeError('Failed to fetch');
-                            }}
-                            return origFetch.apply(this, args);
-                        }};
-                    }}
-
-                    // 3. Network Level Interception: XMLHttpRequest Hook
-                    if (window.XMLHttpRequest) {{
-                        const origOpen = XMLHttpRequest.prototype.open;
-                        XMLHttpRequest.prototype.open = function(method, url, ...rest) {{
-                            this._titanReqUrl = url;
-                            return origOpen.call(this, method, url, ...rest);
-                        }};
-
-                        const origSend = XMLHttpRequest.prototype.send;
-                        XMLHttpRequest.prototype.send = function(...args) {{
-                            if (this._titanReqUrl && isBlockedUrl(this._titanReqUrl, 'xhr')) {{
-                                reportBlocked(this._titanReqUrl, 'xhr');
-                                try {{
-                                    Object.defineProperty(this, 'readyState', {{ value: 4, configurable: true }});
-                                    Object.defineProperty(this, 'status', {{ value: 200, configurable: true }});
-                                    Object.defineProperty(this, 'statusText', {{ value: 'OK', configurable: true }});
-                                    Object.defineProperty(this, 'responseText', {{ value: '', configurable: true }});
-                                    Object.defineProperty(this, 'response', {{ value: '', configurable: true }});
-                                    this.dispatchEvent(new Event('readystatechange'));
-                                    this.dispatchEvent(new Event('load'));
-                                    this.dispatchEvent(new Event('loadend'));
-                                }} catch(e) {{}}
-                                return;
-                            }}
-                            return origSend.apply(this, args);
-                        }};
-                    }}
-
-                    // 4. Network Level Interception: Script & Frame DOM Element hooking
-                    function hookElementSrc(proto, reqType, dummyUrl) {{
-                        const descriptor = Object.getOwnPropertyDescriptor(proto, 'src');
-                        if (descriptor && descriptor.set) {{
-                            Object.defineProperty(proto, 'src', {{
-                                set: function(val) {{
-                                    if (isBlockedUrl(val, reqType)) {{
-                                        reportBlocked(val, reqType);
-                                        descriptor.set.call(this, dummyUrl || '');
-                                        return;
-                                    }}
-                                    descriptor.set.call(this, val);
-                                }},
-                                get: descriptor.get,
-                                configurable: true
-                            }});
-                        }}
-                    }}
-                    if (window.HTMLScriptElement) hookElementSrc(HTMLScriptElement.prototype, 'script', 'data:text/javascript;base64,');
-                    if (window.HTMLIFrameElement) hookElementSrc(HTMLIFrameElement.prototype, 'subdocument', 'about:blank');
-                    if (window.HTMLImageElement) hookElementSrc(HTMLImageElement.prototype, 'image', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
-
-                    // 5. Pop-up & Popunder Blocker
-                    if (blockPopups && window.open) {{
-                        const origOpen = window.open;
-                        window.open = function(url, target, features) {{
-                            if (!url || url === 'about:blank' || url === '' || isBlockedUrl(url, 'popup')) {{
-                                reportBlocked(url || 'popunder', 'popup');
-                                return null;
-                            }}
-                            try {{
-                                const parsed = new URL(url, window.location.href);
-                                if (isBlockedUrl(parsed.href, 'popup')) {{
-                                    reportBlocked(parsed.href, 'popup');
-                                    return null;
-                                }}
-                            }} catch(e) {{}}
-                            return origOpen.call(this, url, target, features);
-                        }};
-                    }}
-
-                    // 6. Universal Cosmetic Element Hiding (Ads, Social Floating Bars & Fake Captcha Modals)
-                    if (cosmeticFiltering) {{
-                        let staticSelectors = [
-                            // Ads & Banners
-                            'ins.adsbygoogle',
-                            '[id^="google_ads_"]',
-                            '[id*="google_ads_iframe"]',
-                            '[id*="ScriptRoot"]',
-                            '[class*="sponsored-post"]',
-                            '[class*="ad-container"]',
-                            '[class*="ad_container"]',
-                            '[id*="banner-ad"]',
-                            '[id*="ad-banner"]',
-                            '[class*="ad-banner"]',
-                            '[class*="ad-wrapper"]',
-                            '[id*="ad-wrapper"]',
-                            '[class*="ad-slot"]',
-                            '[id*="ad-slot"]',
-                            '[class*="ad-placement"]',
-                            '[aria-label="advertisement"]',
-                            '[aria-label="Sponsored"]',
-                            '.trc_rbox_div',
-                            '.OUTBRAIN',
-                            '.taboola-placeholder',
-                            '[class*="adbox"]',
-                            '[id*="adbox"]',
-                            '[class*="ad-frame"]',
-
-                            // Social Floating Bars & Annoyance Docks
-                            '[class*="share-bar"]',
-                            '[class*="floating-share"]',
-                            '[class*="shares-box"]',
-                            '.social-share',
-                            '[id*="share-buttons"]',
-                            '[class*="share-container"]',
-                            'div[class*="share-sidebar"]',
-                            '.at-share-dock',
-                            '.addthis_floating_style',
-                            '.sharethis-inline-share-buttons',
-                            '.st-sticky-share-buttons',
-                            'div[class*="shares"]',
-                            'div[class*="share-btn"]',
-                            'div[class*="social-buttons"]',
-                            'div[class*="ShareBar"]',
-                            'div[class*="ShareButtons"]',
-
-                            // Fake Robot Captchas, Scam Modals & Push Notification Prompts
-                            '[class*="captcha-modal"]',
-                            '[id*="captcha-modal"]',
-                            '[class*="robot-modal"]',
-                            '[class*="robot-check"]',
-                            '[class*="verify-robot"]',
-                            '[id*="robot-check"]',
-                            '[class*="notification-prompt"]',
-                            '[class*="push-prompt"]',
-                            '[class*="push-modal"]',
-                            '[class*="ad-modal"]',
-                            '[class*="popup-modal"]',
-                            '[id*="popup-modal"]',
-                            '[class*="interstitial"]',
-                            '[id*="interstitial"]',
-                            '[class*="overlay-backdrop"]',
-                            '[id*="overlay-backdrop"]',
-                            '[class*="ad-overlay"]',
-                            '[id*="ad-overlay"]',
-                            '.modal-backdrop',
-                            '.popup-backdrop',
-                            'div[style*="z-index: 2147483647"]',
-                            'div[style*="z-index: 999999"]',
-                            'div[style*="z-index: 99999"]',
-
-                            // Video Platform Ad Overlays
-                            'ytd-promoted-video-renderer',
-                            'ytd-promoted-sparkles-web-renderer',
-                            'ytd-display-ad-renderer',
-                            'ytd-statement-banner-renderer',
-                            'ytd-in-feed-ad-layout-renderer',
-                            'ytd-banner-promo-renderer',
-                            '#masthead-ad',
-                            '#player-ads',
-                            '#offer-module',
-                            '.ytp-ad-overlay-container',
-                            '.ytp-ad-message-container',
-                            '.ytp-ad-overlay-slot',
-                            '.ytp-ad-action-interstitial',
-                            '.video-ads',
-                            '.ytp-ad-module'
-                        ];
-
-                        if (Array.isArray(DYNAMIC_SELECTORS) && DYNAMIC_SELECTORS.length > 0) {{
-                            staticSelectors = staticSelectors.concat(DYNAMIC_SELECTORS);
-                        }}
-
-                        const adCss = staticSelectors.join(',\n') + ' {{ display: none !important; visibility: hidden !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; width: 0 !important; opacity: 0 !important; pointer-events: none !important; overflow: hidden !important; }}';
-
-                        function injectAdStyle() {{
-                            if (document.getElementById('titan-adblock-style')) return;
-                            const style = document.createElement('style');
-                            style.id = 'titan-adblock-style';
-                            style.textContent = adCss;
-                            (document.head || document.documentElement).appendChild(style);
-                        }}
-
-                        injectAdStyle();
-                        if (document.readyState === 'loading') {{
-                            document.addEventListener('DOMContentLoaded', injectAdStyle, {{ once: true }});
-                        }}
-
-                        // Active Realtime Annoyance & Fake Robot Modal Cleaner
-                        function cleanAnnoyances() {{
-                            try {{
-                                const modals = document.querySelectorAll('div, dialog, section');
-                                for (const el of modals) {{
-                                    const text = (el.innerText || '').toLowerCase();
-                                    if (
-                                        (text.includes('kein roboter') || text.includes('not a robot') || text.includes('verify you are human') || text.includes('click allow') || text.includes('klicken sie auf den button')) &&
-                                        (el.querySelector('img, svg, button') || el.classList.contains('modal') || (el.style && (el.style.position === 'fixed' || el.style.position === 'absolute')))
-                                    ) {{
-                                        if (el !== document.body && el !== document.documentElement && el.parentElement) {{
-                                            el.style.setProperty('display', 'none', 'important');
-                                            el.style.setProperty('pointer-events', 'none', 'important');
-                                            el.style.setProperty('visibility', 'hidden', 'important');
-                                            if (document.body) {{
-                                                document.body.style.removeProperty('overflow');
-                                                document.body.classList.remove('modal-open', 'no-scroll');
-                                            }}
-                                        }}
-                                    }}
-
-                                    // Remove transparent full-screen click traps
-                                    if (el.tagName === 'DIV' && el.parentElement === document.body && el.style) {{
-                                        if (el.style.position === 'fixed' && (el.style.zIndex === '2147483647' || parseInt(el.style.zIndex, 10) > 9999) && el.style.opacity === '0') {{
-                                            el.style.setProperty('display', 'none', 'important');
-                                            el.remove();
-                                        }}
-                                    }}
-                                }}
-                            }} catch(e) {{}}
-                        }}
-
-                        const observer = new MutationObserver(() => {{
-                            cleanAnnoyances();
-                        }});
-                        if (document.documentElement) {{
-                            observer.observe(document.documentElement, {{ childList: true, subtree: true }});
-                        }} else {{
-                            document.addEventListener('DOMContentLoaded', () => {{
-                                if (document.documentElement) observer.observe(document.documentElement, {{ childList: true, subtree: true }});
-                            }}, {{ once: true }});
-                        }}
-                        setTimeout(cleanAnnoyances, 200);
-                        setTimeout(cleanAnnoyances, 600);
-                        setTimeout(cleanAnnoyances, 1200);
-                    }}
-
-                    // 7. Execute uBO Scriptlet Defusers
-                    if (SCRIPTLET_CODE && typeof SCRIPTLET_CODE === 'string' && SCRIPTLET_CODE.trim()) {{
-                        try {{
-                            const fn = new Function(SCRIPTLET_CODE);
-                            fn();
-                        }} catch(e) {{}}
-                    }}
-
-                    // 8. Video Ad Auto-Skipper & Fast-Forward (Active on YouTube)
-                    if (blockVideoAds && (currentHost.includes('youtube.com') || currentHost.includes('youtu.be'))) {{
-                        function handleVideoAds() {{
-                            try {{
-                                const skipSelectors = [
-                                    '.ytp-ad-skip-button',
-                                    '.ytp-ad-skip-button-modern',
-                                    '.ytp-skip-ad-button',
-                                    '.ytp-ad-skip-button-slot',
-                                    '.ytp-ad-overlay-close-button',
-                                    '.videoAdUiSkipButton',
-                                    '[id^="skip-button"]',
-                                    '.ytp-ad-text.ytp-ad-preview-text'
-                                ];
-
-                                for (const sel of skipSelectors) {{
-                                    const btn = document.querySelector(sel);
-                                    if (btn) {{
-                                        btn.click();
-                                    }}
-                                }}
-
-                                const adElements = document.querySelectorAll('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
-                                if (adElements.length > 0) {{
-                                    const videos = document.querySelectorAll('video');
-                                    videos.forEach(v => {{
-                                        if (v && !isNaN(v.duration) && v.duration > 0) {{
-                                            v.muted = true;
-                                            v.playbackRate = 16.0;
-                                            v.currentTime = v.duration;
-                                        }}
-                                    }});
-                                }}
-                            }} catch(e) {{}}
-                        }}
-
-                        setInterval(handleVideoAds, 300);
-                    }}
-                }} catch(e) {{}}
-            }})();
-
-            "#,
-            enabled = enabled,
-            block_video_ads = block_video_ads,
-            cosmetic_filtering = cosmetic_filtering,
-            block_popups = block_popups,
-            aggressive_mode = aggressive_mode,
-            whitelisted_domains_json = whitelisted_domains_json,
-            blocked_domains_json = blocked_domains_json,
-            dynamic_selectors_json = dynamic_selectors_json,
-            scriptlet_code_json = scriptlet_code_json,
+        render_typescript(
+            include_str!("../web-scripts/dist/desktop-adblock.js"),
+            "__TITAN_DESKTOP_ADBLOCK_CONFIG__",
+            serde_json::json!({
+                "enabled": self.settings.adblock_enabled,
+                "blockVideoAds": self.settings.adblock_block_video_ads,
+                "cosmeticFiltering": self.settings.adblock_cosmetic_filtering,
+                "blockPopups": self.settings.adblock_block_popups,
+                "aggressiveMode": self.settings.adblock_aggressive_mode,
+                "whitelistedDomains": self.settings.adblock_whitelisted_domains,
+                "blockedDomains": self.settings.adblock_blocked_domains,
+                "dynamicSelectors": dynamic_selectors,
+                "scriptletCode": dynamic_scriptlet,
+            }),
         )
     }
 
@@ -865,33 +343,14 @@ impl BrowserManager {
         if hide_selectors.is_empty() && scriptlet.is_empty() {
             return String::new();
         }
-        let css = hide_selectors.join(",\n");
-        let css_escaped = serde_json::to_string(&css).unwrap_or_else(|_| "\"\"".into());
-        let scriptlet_escaped = serde_json::to_string(&scriptlet).unwrap_or_else(|_| "\"\"".into());
-        format!(
-            r#"
-            (function() {{
-                try {{
-                    const css = {css_escaped};
-                    if (css) {{
-                        let style = document.getElementById('titan-dynamic-adblock-style');
-                        if (!style) {{
-                            style = document.createElement('style');
-                            style.id = 'titan-dynamic-adblock-style';
-                            (document.head || document.documentElement).appendChild(style);
-                        }}
-                        style.textContent = css + ' {{ display: none !important; visibility: hidden !important; height: 0 !important; max-height: 0 !important; width: 0 !important; opacity: 0 !important; pointer-events: none !important; }}';
-                    }}
-                    const scriptlet = {scriptlet_escaped};
-                    if (scriptlet) {{
-                        try {{
-                            const fn = new Function(scriptlet);
-                            fn();
-                        }} catch(e) {{}}
-                    }}
-                }} catch(e) {{}}
-            }})();
-            "#
+
+        render_typescript(
+            include_str!("../web-scripts/dist/desktop-dynamic-adblock.js"),
+            "__TITAN_DESKTOP_DYNAMIC_ADBLOCK_CONFIG__",
+            serde_json::json!({
+                "css": hide_selectors.join(",\n"),
+                "scriptlet": scriptlet,
+            }),
         )
     }
 
@@ -938,51 +397,18 @@ impl BrowserManager {
         let privacy_script = self.get_privacy_injection_script();
         let adblock_script = self.get_adblock_injection_script(&normalized_url);
 
-        let init_script = format!(
-            r#"
-            (function() {{
-                const tabId = {tab_id};
-                let lastUrl = '';
-                let lastTitle = '';
-                let notifyTimer = null;
-
-                function notify() {{
-                    clearTimeout(notifyTimer);
-                    notifyTimer = setTimeout(() => {{
-                        const curUrl = window.location.href;
-                        const curTitle = document.title || window.location.hostname || 'New Tab';
-                        if (curUrl !== lastUrl || curTitle !== lastTitle) {{
-                            lastUrl = curUrl;
-                            lastTitle = curTitle;
-                            try {{
-                                window.ipc.postMessage(JSON.stringify({{
-                                    type: 'TabStateUpdate',
-                                    tab_id: tabId,
-                                    url: curUrl,
-                                    title: curTitle,
-                                    can_go_back: window.history.length > 1,
-                                    can_go_forward: true
-                                }}));
-                            }} catch(e) {{}}
-                        }}
-                    }}, 400);
-                }}
-
-                window.addEventListener('popstate', notify);
-                window.addEventListener('load', notify);
-                document.addEventListener('visibilitychange', notify);
-                setTimeout(notify, 500);
-
-                {theme_script}
-                {privacy_script}
-                {adblock_script}
-            }})();
-            "#,
-            tab_id = tab_id,
-            theme_script = theme_script,
-            privacy_script = privacy_script,
-            adblock_script = adblock_script,
+        let tab_state_script = render_typescript(
+            include_str!("../web-scripts/dist/desktop-tab-state.js"),
+            "__TITAN_DESKTOP_TAB_STATE_CONFIG__",
+            serde_json::json!({ "tabId": tab_id }),
         );
+        let init_script = [
+            tab_state_script,
+            theme_script,
+            privacy_script,
+            adblock_script,
+        ]
+        .join("\n");
 
         let content_bounds = self.get_content_bounds();
         let bg_color = self.get_theme_background_color();
@@ -1199,9 +625,10 @@ impl BrowserManager {
     }
 
     pub fn go_back(&mut self) {
+        let script = desktop_command(serde_json::json!({ "type": "goBack" }));
         if let Some(active_id) = self.active_tab_id {
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
-                let _ = tab.webview.evaluate_script("window.history.back();");
+                let _ = tab.webview.evaluate_script(&script);
             }
             if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
                 let _ = tab.webview.focus();
@@ -1210,9 +637,10 @@ impl BrowserManager {
     }
 
     pub fn go_forward(&mut self) {
+        let script = desktop_command(serde_json::json!({ "type": "goForward" }));
         if let Some(active_id) = self.active_tab_id {
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
-                let _ = tab.webview.evaluate_script("window.history.forward();");
+                let _ = tab.webview.evaluate_script(&script);
             }
             if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
                 let _ = tab.webview.focus();
@@ -1240,8 +668,9 @@ impl BrowserManager {
                     let _ = tab.webview.load_html(&html);
                 }
             } else {
+                let script = desktop_command(serde_json::json!({ "type": "reload" }));
                 if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == active_id) {
-                    let _ = tab.webview.evaluate_script("window.location.reload();");
+                    let _ = tab.webview.evaluate_script(&script);
                 }
             }
             if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
@@ -1257,8 +686,8 @@ impl BrowserManager {
     pub fn set_zoom(&mut self, zoom: f64) {
         self.zoom = zoom.clamp(0.4, 3.0);
         let zoom_val = self.zoom;
+        let script = desktop_command(serde_json::json!({ "type": "setZoom", "zoom": zoom_val }));
         for tab in &self.tabs {
-            let script = format!("document.body.style.zoom = '{}';", zoom_val);
             let _ = tab.webview.evaluate_script(&script);
         }
         self.sync_full_state();
@@ -1285,22 +714,19 @@ impl BrowserManager {
     }
 
     pub fn sync_settings_tabs(&self) {
-        let state_json = serde_json::to_string(&serde_json::json!({
-            "settings": self.settings,
-            "modules": self.modules,
-            "blocked_logs": self.blocked_logs,
-            "adblock_logs": self.adblock_logs,
-            "adblock_filter_lists": self.adblock_manager.get_filter_lists_info(),
-            "adblock_stats": self.adblock_manager.get_stats(),
-            "adblock_custom_rules": self.adblock_manager.get_custom_rules(),
-            "update_state": self.update_state,
-        }))
-        .unwrap_or_else(|_| "{}".into());
-
-        let script = format!(
-            "window.initSettings && window.initSettings({});",
-            state_json
-        );
+        let script = desktop_command(serde_json::json!({
+            "type": "initializeSettings",
+            "state": {
+                "settings": self.settings,
+                "modules": self.modules,
+                "blocked_logs": self.blocked_logs,
+                "adblock_logs": self.adblock_logs,
+                "adblock_filter_lists": self.adblock_manager.get_filter_lists_info(),
+                "adblock_stats": self.adblock_manager.get_stats(),
+                "adblock_custom_rules": self.adblock_manager.get_custom_rules(),
+                "update_state": self.update_state,
+            },
+        }));
         for tab in &self.tabs {
             if Self::is_settings_url(&tab.url) {
                 let _ = tab.webview.evaluate_script(&script);
@@ -1808,18 +1234,12 @@ impl BrowserManager {
                     cache,
                     local_storage,
                 } => {
-                    let mut script = String::new();
-                    if local_storage {
-                        script.push_str(
-                            "try { localStorage.clear(); sessionStorage.clear(); } catch(e){}",
-                        );
-                    }
-                    if cookies {
-                        script.push_str("try { document.cookie.split(';').forEach(c => { document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/'); }); } catch(e){}");
-                    }
-                    if cache {
-                        script.push_str("try { if (window.caches) { caches.keys().then(keys => caches.delete(k))); } } catch(e){}");
-                    }
+                    let script = desktop_command(serde_json::json!({
+                        "type": "clearBrowsingData",
+                        "cookies": cookies,
+                        "cache": cache,
+                        "localStorage": local_storage,
+                    }));
                     for tab in &self.tabs {
                         if !Self::is_internal_url(&tab.url) {
                             let _ = tab.webview.evaluate_script(&script);
@@ -1831,9 +1251,11 @@ impl BrowserManager {
                     {
                         let tab_id = self.tabs[pos].id;
                         self.switch_tab(tab_id);
-                        let _ = self.tabs[pos]
-                            .webview
-                            .evaluate_script("window.switchView && window.switchView('themes');");
+                        let script = desktop_command(serde_json::json!({
+                            "type": "switchSettingsView",
+                            "view": "themes",
+                        }));
+                        let _ = self.tabs[pos].webview.evaluate_script(&script);
                     } else {
                         self.create_tab("titan://themes");
                     }
@@ -1843,9 +1265,11 @@ impl BrowserManager {
                     {
                         let tab_id = self.tabs[pos].id;
                         self.switch_tab(tab_id);
-                        let _ = self.tabs[pos]
-                            .webview
-                            .evaluate_script("window.switchView && window.switchView('privacy');");
+                        let script = desktop_command(serde_json::json!({
+                            "type": "switchSettingsView",
+                            "view": "privacy",
+                        }));
+                        let _ = self.tabs[pos].webview.evaluate_script(&script);
                     } else {
                         self.create_tab("titan://privacy");
                     }
@@ -1855,9 +1279,11 @@ impl BrowserManager {
                     {
                         let tab_id = self.tabs[pos].id;
                         self.switch_tab(tab_id);
-                        let _ = self.tabs[pos]
-                            .webview
-                            .evaluate_script("window.switchView && window.switchView('adblock');");
+                        let script = desktop_command(serde_json::json!({
+                            "type": "switchSettingsView",
+                            "view": "adblock",
+                        }));
+                        let _ = self.tabs[pos].webview.evaluate_script(&script);
                     } else {
                         self.create_tab("titan://adblock");
                     }
@@ -1867,9 +1293,11 @@ impl BrowserManager {
                     {
                         let tab_id = self.tabs[pos].id;
                         self.switch_tab(tab_id);
-                        let _ = self.tabs[pos]
-                            .webview
-                            .evaluate_script("window.switchView && window.switchView('general');");
+                        let script = desktop_command(serde_json::json!({
+                            "type": "switchSettingsView",
+                            "view": "general",
+                        }));
+                        let _ = self.tabs[pos].webview.evaluate_script(&script);
                     } else {
                         self.create_tab("titan://settings");
                     }
@@ -1952,10 +1380,11 @@ impl BrowserManager {
                 update_state: self.update_state.clone(),
             };
 
-            if let Ok(json) = serde_json::to_string(&state) {
-                let script = format!("window.onBrowserState && window.onBrowserState({});", json);
-                let _ = header.evaluate_script(&script);
-            }
+            let script = desktop_command(serde_json::json!({
+                "type": "browserState",
+                "state": state,
+            }));
+            let _ = header.evaluate_script(&script);
         }
     }
 
@@ -1970,10 +1399,11 @@ impl BrowserManager {
                     can_go_back: tab.can_go_back,
                     can_go_forward: tab.can_go_forward,
                 };
-                if let Ok(json) = serde_json::to_string(&info) {
-                    let script = format!("window.onTabUpdate && window.onTabUpdate({});", json);
-                    let _ = header.evaluate_script(&script);
-                }
+                let script = desktop_command(serde_json::json!({
+                    "type": "tabUpdate",
+                    "tab": info,
+                }));
+                let _ = header.evaluate_script(&script);
             }
         }
     }
