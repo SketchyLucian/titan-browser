@@ -17,6 +17,10 @@
     searchEngine: 'Google',
     is_maximized: false,
   };
+  let renderedTabsKey = '';
+  let renderedBookmarksKey = '';
+  let renderedTheme = '';
+  let renderedAccentColor = '';
 
   // DOM Elements
   const tabsContainer = document.getElementById('tabsContainer') as HTMLElement;
@@ -57,14 +61,37 @@
     return state.tabs.find((t) => t.id === activeId);
   }
 
+  function getTabsRenderKey(): string {
+    return state.tabs
+      .map((tab) => `${tab.id}\u001f${tab.url}\u001f${tab.title}\u001f${tab.is_loading}`)
+      .join('\u001e');
+  }
+
+  function getBookmarksRenderKey(show: boolean): string {
+    const bookmarksKey = state.bookmarks
+      .map((bookmark) => `${bookmark.url}\u001f${bookmark.title}`)
+      .join('\u001e');
+    return `${show}\u001d${bookmarksKey}`;
+  }
+
   // Render Tabs
   function renderTabs() {
     if (!tabsContainer) return;
+
+    const activeId = state.activeTabId ?? state.active_tab_id;
+    const nextRenderKey = getTabsRenderKey();
+    if (nextRenderKey === renderedTabsKey) {
+      tabsContainer.querySelectorAll<HTMLElement>('.tab-item').forEach((tabEl) => {
+        tabEl.classList.toggle('active', Number(tabEl.dataset.id) === activeId);
+      });
+      return;
+    }
+
+    renderedTabsKey = nextRenderKey;
     tabsContainer.innerHTML = '';
 
     state.tabs.forEach((tab) => {
       const tabEl = document.createElement('div');
-      const activeId = state.activeTabId ?? state.active_tab_id;
       const isActive = tab.id === activeId;
       tabEl.className = `tab-item ${isActive ? 'active' : ''} ${tab.is_loading ? 'loading' : ''}`;
       tabEl.dataset.id = String(tab.id);
@@ -117,6 +144,10 @@
   function renderBookmarks() {
     if (!bookmarksBar || !bookmarksList) return;
     const show = state.settings.show_bookmarks_bar && state.bookmarks.length > 0;
+    const nextRenderKey = getBookmarksRenderKey(show);
+    if (nextRenderKey === renderedBookmarksKey) return;
+
+    renderedBookmarksKey = nextRenderKey;
     bookmarksBar.classList.toggle('visible', show);
 
     bookmarksList.innerHTML = '';
@@ -155,23 +186,30 @@
     if (!activeTab) return;
 
     if (document.activeElement !== urlInput) {
-      urlInput.value = activeTab.url === 'about:blank' ? '' : activeTab.url;
+      const nextUrl = activeTab.url === 'about:blank' ? '' : activeTab.url;
+      if (urlInput.value !== nextUrl) urlInput.value = nextUrl;
     }
 
-    backBtn.disabled = !activeTab.can_go_back;
-    forwardBtn.disabled = !activeTab.can_go_forward;
+    const backDisabled = !activeTab.can_go_back;
+    const forwardDisabled = !activeTab.can_go_forward;
+    if (backBtn.disabled !== backDisabled) backBtn.disabled = backDisabled;
+    if (forwardBtn.disabled !== forwardDisabled) forwardBtn.disabled = forwardDisabled;
 
     // SSL Badge
+    let sslClassName: string;
+    let sslTitle: string;
     if (activeTab.url.startsWith('https://')) {
-      sslBadge.className = 'ssl-badge secure';
-      sslBadge.title = 'Secure Connection (HTTPS)';
+      sslClassName = 'ssl-badge secure';
+      sslTitle = 'Secure Connection (HTTPS)';
     } else if (activeTab.url.startsWith('titan://')) {
-      sslBadge.className = 'ssl-badge secure';
-      sslBadge.title = 'Titan Internal Page';
+      sslClassName = 'ssl-badge secure';
+      sslTitle = 'Titan Internal Page';
     } else {
-      sslBadge.className = 'ssl-badge warning';
-      sslBadge.title = 'Not Secure';
+      sslClassName = 'ssl-badge warning';
+      sslTitle = 'Not Secure';
     }
+    if (sslBadge.className !== sslClassName) sslBadge.className = sslClassName;
+    if (sslBadge.title !== sslTitle) sslBadge.title = sslTitle;
 
     // Bookmark Star State
     const isBookmarked = state.bookmarks.some((b) => b.url === activeTab.url);
@@ -179,16 +217,22 @@
 
     // Search Engine Badge
     if (searchEngineBadge) {
-      searchEngineBadge.textContent = state.settings.search_engine || 'Google';
+      const nextSearchEngine = state.settings.search_engine || 'Google';
+      if (searchEngineBadge.textContent !== nextSearchEngine) {
+        searchEngineBadge.textContent = nextSearchEngine;
+      }
     }
   }
 
   // Apply Theme to Chrome UI
   function applyTheme(themeId: string, accentColor?: string) {
-    document.body.className = '';
-    document.body.classList.add(`theme-${themeId}`);
-    if (accentColor) {
+    if (themeId !== renderedTheme) {
+      document.body.className = `theme-${themeId}`;
+      renderedTheme = themeId;
+    }
+    if (accentColor && accentColor !== renderedAccentColor) {
       document.documentElement.style.setProperty('--accent-blue', accentColor);
+      renderedAccentColor = accentColor;
     }
   }
 
@@ -359,6 +403,7 @@
           tabEl.classList.toggle('loading', !!tab.is_loading);
         }
       }
+      renderedTabsKey = getTabsRenderKey();
 
       const activeId = state.activeTabId ?? state.active_tab_id;
       if (tab.id === activeId) {
