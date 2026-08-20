@@ -100,6 +100,7 @@ interface BrowserState {
 
 interface SettingsInitState extends Partial<BrowserState> {
   active_section?: string;
+  mandatory_blocked_domains?: string[];
   blocked_logs?: BlockedRequestLog[];
   adblock_logs?: BlockedRequestLog[];
   adblock_filter_lists?: FilterListConfig[];

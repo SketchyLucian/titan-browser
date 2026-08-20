@@ -8,6 +8,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
+import com.titan.browser.model.BrowserSettings
 
 object TitanWebViewFactory {
 
@@ -16,13 +17,18 @@ object TitanWebViewFactory {
 
     @Suppress("DEPRECATION")
     @SuppressLint("SetJavaScriptEnabled")
-    fun configureSettings(webView: WebView, isDesktopMode: Boolean = false, isDarkTheme: Boolean = true) {
+    fun configureSettings(
+        webView: WebView,
+        browserSettings: BrowserSettings = BrowserSettings(),
+        isDesktopMode: Boolean = false,
+        isDarkTheme: Boolean = true
+    ) {
         val settings = webView.settings
 
         // 1. High Performance JavaScript & Storage
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.databaseEnabled = true
+        settings.javaScriptEnabled = browserSettings.javascriptEnabled
+        settings.domStorageEnabled = browserSettings.domStorageEnabled
+        settings.databaseEnabled = browserSettings.domStorageEnabled
         settings.cacheMode = WebSettings.LOAD_DEFAULT
 
         // 2. Hardware Acceleration & Direct Window Compositing
@@ -42,7 +48,7 @@ object TitanWebViewFactory {
         settings.displayZoomControls = false
         settings.setSupportZoom(true)
         settings.allowFileAccess = false
-        settings.allowContentAccess = true
+        settings.allowContentAccess = false
         settings.mediaPlaybackRequiresUserGesture = false
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         settings.setGeolocationEnabled(false)
@@ -55,12 +61,18 @@ object TitanWebViewFactory {
         }
 
         // 5. Cookie Manager Setup
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+        CookieManager.getInstance().setAcceptCookie(browserSettings.cookiesEnabled)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(
+            webView,
+            browserSettings.cookiesEnabled && !browserSettings.blockThirdPartyCookies
+        )
 
         // 6. Desktop vs Mobile User Agent
         if (isDesktopMode) {
             settings.userAgentString = DESKTOP_USER_AGENT
+        } else if (browserSettings.reduceFingerprinting) {
+            settings.userAgentString = WebSettings.getDefaultUserAgent(webView.context)
+                .replace(Regex("\\(Linux; Android [^)]*\\)"), "(Linux; Android 10; K; wv)")
         } else {
             settings.userAgentString = null // Default mobile UA
         }
@@ -78,9 +90,12 @@ object TitanWebViewFactory {
         }
     }
 
-    fun createWebView(context: Context): WebView {
+    fun createWebView(
+        context: Context,
+        browserSettings: BrowserSettings = BrowserSettings()
+    ): WebView {
         return WebView(context).apply {
-            configureSettings(this)
+            configureSettings(this, browserSettings)
         }
     }
 }

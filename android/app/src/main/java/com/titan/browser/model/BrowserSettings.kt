@@ -21,7 +21,15 @@ data class BrowserSettings(
     val adblockFilterLists: List<String> = defaultAdblockFilterLists(),
     val adblockCustomRules: List<String> = emptyList(),
     val stripTrackingParameters: Boolean = true,
-    val autoUpdateEnabled: Boolean = true
+    val doNotTrackEnabled: Boolean = true,
+    val globalPrivacyControlEnabled: Boolean = true,
+    val blockThirdPartyCookies: Boolean = true,
+    val blockWebRtc: Boolean = true,
+    val reduceFingerprinting: Boolean = true,
+    val blockHyperlinkAuditing: Boolean = true,
+    val autoUpdateFilterLists: Boolean = false,
+    val autoUpdateEnabled: Boolean = false,
+    val privacyMigrationVersion: Int = 0
 )
 
 fun defaultAdblockFilterLists(): List<String> = listOf(

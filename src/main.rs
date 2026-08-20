@@ -5,6 +5,7 @@ mod browser;
 mod drag_util;
 mod ipc;
 mod menu_util;
+mod privacy;
 mod storage;
 mod updater;
 mod url_utils;
@@ -25,22 +26,7 @@ fn main() {
     let _ = std::fs::create_dir_all(&webview_data_dir);
     std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_data_dir);
 
-    // Hardened Chromium & WebView2 anti-telemetry and privacy flags:
-    // Disables background networking, metrics uploads, crash reporting, domain reliability pings, tracking,
-    // and maps known telemetry/diagnostic hostnames to 0.0.0.0 at the socket resolver layer.
-    let privacy_browser_args = [
-        "--disable-features=Translate,OptimizationHints,MediaRouter,InterestFeedContentSuggestions",
-        "--disable-background-networking",
-        "--disable-domain-reliability",
-        "--disable-component-update",
-        "--disable-sync",
-        "--disable-breakpad",
-        "--no-report-upload",
-        "--disable-client-side-phishing-detection",
-        "--disable-default-apps",
-        "--no-pings",
-        "--host-resolver-rules=MAP *.pipe.aria.microsoft.com 0.0.0.0, MAP *.events.data.microsoft.com 0.0.0.0, MAP telemetry.microsoft.com 0.0.0.0, MAP *.telemetry.microsoft.com 0.0.0.0, MAP watson.telemetry.microsoft.com 0.0.0.0, MAP mobile.pipe.aria.microsoft.com 0.0.0.0, MAP *.google-analytics.com 0.0.0.0, MAP *.googletagmanager.com 0.0.0.0, MAP stats.g.doubleclick.net 0.0.0.0, MAP *.sentry.io 0.0.0.0, MAP *.clarity.ms 0.0.0.0, MAP *.segment.io 0.0.0.0, MAP *.mixpanel.com 0.0.0.0, MAP *.doubleclick.net 0.0.0.0, MAP *.googleadservices.com 0.0.0.0, MAP *.googlesyndication.com 0.0.0.0, MAP *.adservice.google.com 0.0.0.0, MAP *.pagead2.googlesyndication.com 0.0.0.0, MAP *.adnxs.com 0.0.0.0, MAP *.criteo.com 0.0.0.0, MAP *.outbrain.com 0.0.0.0, MAP *.taboola.com 0.0.0.0, MAP *.popads.net 0.0.0.0, MAP *.popcash.net 0.0.0.0, MAP *.propellerads.com 0.0.0.0, MAP *.adcash.com 0.0.0.0",
-    ].join(" ");
+    let privacy_browser_args = privacy::webview2_browser_args();
 
     std::env::set_var(
         "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",

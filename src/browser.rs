@@ -185,6 +185,7 @@ impl BrowserManager {
             "adblock_filter_lists": self.adblock_manager.get_filter_lists_info(),
             "adblock_stats": self.adblock_manager.get_stats(),
             "adblock_custom_rules": self.adblock_manager.get_custom_rules(),
+            "mandatory_blocked_domains": crate::privacy::BLOCKED_TELEMETRY_DOMAINS,
             "update_state": self.update_state,
             "active_section": active_section,
         }))
@@ -313,6 +314,12 @@ impl BrowserManager {
                 "doNotTrack": self.settings.do_not_track,
                 "globalPrivacyControl": self.settings.global_privacy_control,
                 "blockWebRtc": self.settings.block_webrtc_leak,
+                "blockFingerprinting": self.settings.block_fingerprinting,
+                "blockHyperlinkAuditing": self.settings.block_hyperlink_auditing,
+                "telemetryDisabled": true,
+                "mandatoryDomains": crate::privacy::BLOCKED_TELEMETRY_DOMAINS,
+                "blockedDomains": self.settings.blocked_domains,
+                "whitelistedDomains": self.settings.whitelisted_domains,
             }),
         )
     }
@@ -356,6 +363,15 @@ impl BrowserManager {
 
     pub fn update_all_tabs_theme(&self) {
         let script = self.get_theme_injection_script();
+        for tab in &self.tabs {
+            if !Self::is_internal_url(&tab.url) {
+                let _ = tab.webview.evaluate_script(&script);
+            }
+        }
+    }
+
+    pub fn update_all_tabs_privacy(&self) {
+        let script = self.get_privacy_injection_script();
         for tab in &self.tabs {
             if !Self::is_internal_url(&tab.url) {
                 let _ = tab.webview.evaluate_script(&script);
@@ -724,6 +740,7 @@ impl BrowserManager {
                 "adblock_filter_lists": self.adblock_manager.get_filter_lists_info(),
                 "adblock_stats": self.adblock_manager.get_stats(),
                 "adblock_custom_rules": self.adblock_manager.get_custom_rules(),
+                "mandatory_blocked_domains": crate::privacy::BLOCKED_TELEMETRY_DOMAINS,
                 "update_state": self.update_state,
             },
         }));
@@ -1019,10 +1036,11 @@ impl BrowserManager {
                         "block_hyperlink_auditing" => {
                             self.settings.block_hyperlink_auditing = enabled
                         }
-                        "telemetry_disabled" => self.settings.telemetry_disabled = enabled,
+                        "telemetry_disabled" => self.settings.telemetry_disabled = true,
                         _ => {}
                     }
                     self.storage.save_settings(&self.settings);
+                    self.update_all_tabs_privacy();
                     self.sync_settings_tabs();
                     self.sync_full_state();
                 }
@@ -1046,32 +1064,40 @@ impl BrowserManager {
                     self.sync_full_state();
                 }
                 IpcIncoming::AddBlockedDomain { domain } => {
-                    let d = domain.trim().to_lowercase();
-                    if !d.is_empty() && !self.settings.blocked_domains.contains(&d) {
-                        self.settings.blocked_domains.push(d);
-                        self.storage.save_settings(&self.settings);
-                        self.sync_settings_tabs();
+                    if let Some(d) = crate::privacy::normalize_domain_rule(&domain) {
+                        if !self.settings.blocked_domains.contains(&d) {
+                            self.settings.blocked_domains.push(d);
+                            self.storage.save_settings(&self.settings);
+                            self.sync_settings_tabs();
+                        }
                     }
                 }
                 IpcIncoming::RemoveBlockedDomain { domain } => {
-                    let d = domain.trim().to_lowercase();
-                    self.settings.blocked_domains.retain(|item| item != &d);
-                    self.storage.save_settings(&self.settings);
-                    self.sync_settings_tabs();
-                }
-                IpcIncoming::AddWhitelistedDomain { domain } => {
-                    let d = domain.trim().to_lowercase();
-                    if !d.is_empty() && !self.settings.whitelisted_domains.contains(&d) {
-                        self.settings.whitelisted_domains.push(d);
+                    if let Some(d) = crate::privacy::normalize_domain_rule(&domain) {
+                        if crate::privacy::BLOCKED_TELEMETRY_DOMAINS.contains(&d.as_str()) {
+                            self.sync_settings_tabs();
+                            return;
+                        }
+                        self.settings.blocked_domains.retain(|item| item != &d);
                         self.storage.save_settings(&self.settings);
                         self.sync_settings_tabs();
                     }
                 }
+                IpcIncoming::AddWhitelistedDomain { domain } => {
+                    if let Some(d) = crate::privacy::normalize_domain_rule(&domain) {
+                        if !self.settings.whitelisted_domains.contains(&d) {
+                            self.settings.whitelisted_domains.push(d);
+                            self.storage.save_settings(&self.settings);
+                            self.sync_settings_tabs();
+                        }
+                    }
+                }
                 IpcIncoming::RemoveWhitelistedDomain { domain } => {
-                    let d = domain.trim().to_lowercase();
-                    self.settings.whitelisted_domains.retain(|item| item != &d);
-                    self.storage.save_settings(&self.settings);
-                    self.sync_settings_tabs();
+                    if let Some(d) = crate::privacy::normalize_domain_rule(&domain) {
+                        self.settings.whitelisted_domains.retain(|item| item != &d);
+                        self.storage.save_settings(&self.settings);
+                        self.sync_settings_tabs();
+                    }
                 }
                 IpcIncoming::ResetPrivacyRules => {
                     self.settings.blocked_domains = crate::ipc::default_blocked_domains();
@@ -1080,36 +1106,40 @@ impl BrowserManager {
                     self.sync_settings_tabs();
                 }
                 IpcIncoming::AddAdblockDomain { domain } => {
-                    let d = domain.trim().to_lowercase();
-                    if !d.is_empty() && !self.settings.adblock_blocked_domains.contains(&d) {
-                        self.settings.adblock_blocked_domains.push(d);
-                        self.storage.save_settings(&self.settings);
-                        self.sync_settings_tabs();
+                    if let Some(d) = crate::privacy::normalize_domain_rule(&domain) {
+                        if !self.settings.adblock_blocked_domains.contains(&d) {
+                            self.settings.adblock_blocked_domains.push(d);
+                            self.storage.save_settings(&self.settings);
+                            self.sync_settings_tabs();
+                        }
                     }
                 }
                 IpcIncoming::RemoveAdblockDomain { domain } => {
-                    let d = domain.trim().to_lowercase();
-                    self.settings
-                        .adblock_blocked_domains
-                        .retain(|item| item != &d);
-                    self.storage.save_settings(&self.settings);
-                    self.sync_settings_tabs();
-                }
-                IpcIncoming::AddAdblockWhitelist { domain } => {
-                    let d = domain.trim().to_lowercase();
-                    if !d.is_empty() && !self.settings.adblock_whitelisted_domains.contains(&d) {
-                        self.settings.adblock_whitelisted_domains.push(d);
+                    if let Some(d) = crate::privacy::normalize_domain_rule(&domain) {
+                        self.settings
+                            .adblock_blocked_domains
+                            .retain(|item| item != &d);
                         self.storage.save_settings(&self.settings);
                         self.sync_settings_tabs();
                     }
                 }
+                IpcIncoming::AddAdblockWhitelist { domain } => {
+                    if let Some(d) = crate::privacy::normalize_domain_rule(&domain) {
+                        if !self.settings.adblock_whitelisted_domains.contains(&d) {
+                            self.settings.adblock_whitelisted_domains.push(d);
+                            self.storage.save_settings(&self.settings);
+                            self.sync_settings_tabs();
+                        }
+                    }
+                }
                 IpcIncoming::RemoveAdblockWhitelist { domain } => {
-                    let d = domain.trim().to_lowercase();
-                    self.settings
-                        .adblock_whitelisted_domains
-                        .retain(|item| item != &d);
-                    self.storage.save_settings(&self.settings);
-                    self.sync_settings_tabs();
+                    if let Some(d) = crate::privacy::normalize_domain_rule(&domain) {
+                        self.settings
+                            .adblock_whitelisted_domains
+                            .retain(|item| item != &d);
+                        self.storage.save_settings(&self.settings);
+                        self.sync_settings_tabs();
+                    }
                 }
                 IpcIncoming::ResetAdblockRules => {
                     self.settings.adblock_blocked_domains = crate::ipc::default_adblock_domains();
@@ -1189,7 +1219,7 @@ impl BrowserManager {
                         0,
                         crate::ipc::BlockedRequestLog {
                             domain,
-                            url,
+                            url: crate::privacy::sanitize_local_log_url(&url),
                             req_type,
                             timestamp: now,
                         },
@@ -1219,7 +1249,7 @@ impl BrowserManager {
                         0,
                         crate::ipc::BlockedRequestLog {
                             domain,
-                            url,
+                            url: crate::privacy::sanitize_local_log_url(&url),
                             req_type,
                             timestamp: now,
                         },
