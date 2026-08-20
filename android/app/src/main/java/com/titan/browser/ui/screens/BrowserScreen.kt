@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import com.titan.browser.model.Tab
 import com.titan.browser.ui.components.BookmarksSheet
 import com.titan.browser.ui.components.BottomToolbar
 import com.titan.browser.ui.components.FindInPageBar
@@ -37,7 +38,6 @@ fun BrowserScreen(
     viewModel: BrowserViewModel,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val tabs by viewModel.tabs.collectAsState()
     val activeTabId by viewModel.activeTabId.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
@@ -45,14 +45,10 @@ fun BrowserScreen(
     val updateState by viewModel.updateState.collectAsState()
 
     val isTabGridVisible by viewModel.isTabGridVisible.collectAsState()
-    val isMenuVisible by viewModel.isMenuVisible.collectAsState()
     val isBookmarksVisible by viewModel.isBookmarksVisible.collectAsState()
     val isSettingsVisible by viewModel.isSettingsVisible.collectAsState()
     val isFindInPageVisible by viewModel.isFindInPageVisible.collectAsState()
     val fullscreenView by viewModel.customFullscreenView.collectAsState()
-    val loadingProgress by viewModel.loadingProgress.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val isToolbarVisible by viewModel.isToolbarVisible.collectAsState()
 
     val activeTab = tabs.firstOrNull { it.id == activeTabId }
 
@@ -66,8 +62,6 @@ fun BrowserScreen(
             viewModel.setTabGridVisible(false)
         } else if (isBookmarksVisible) {
             viewModel.setBookmarksVisible(false)
-        } else if (isMenuVisible) {
-            viewModel.setMenuVisible(false)
         } else if (isFindInPageVisible) {
             viewModel.setFindInPageVisible(false)
         } else {
@@ -149,32 +143,18 @@ fun BrowserScreen(
         }
 
         // Firefox Android Style Bottom Search & Navigation Bar
-        AnimatedVisibility(
-            visible = isToolbarVisible &&
-                fullscreenView == null &&
+        BrowserToolbar(
+            viewModel = viewModel,
+            currentUrl = activeTab?.url ?: "titan://newtab",
+            tabCount = tabs.size,
+            canShow = fullscreenView == null &&
                 !isSettingsVisible &&
                 !isTabGridVisible &&
-                !isBookmarksVisible &&
-                !isMenuVisible,
-            enter = slideInVertically(initialOffsetY = { it }),
-            exit = slideOutVertically(targetOffsetY = { it }),
+                !isBookmarksVisible,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .imePadding()
-        ) {
-            BottomToolbar(
-                currentUrl = activeTab?.url ?: "titan://newtab",
-                isLoading = isLoading,
-                progress = loadingProgress,
-                tabCount = tabs.size,
-                onNavigate = { viewModel.navigate(it) },
-                onReloadOrStop = { viewModel.reload() },
-                onTabsClick = { viewModel.setTabGridVisible(true) },
-                onMenuClick = { viewModel.setMenuVisible(true) }
-            )
-        }
-
-
+        )
 
         // Tab Grid Switcher Screen
         AnimatedVisibility(
@@ -236,37 +216,11 @@ fun BrowserScreen(
             )
         }
 
-        // Menu BottomSheet (Firefox style with top quick actions)
-        if (isMenuVisible) {
-            MenuBottomSheet(
-                canGoBack = activeTab?.canGoBack ?: false,
-                canGoForward = activeTab?.canGoForward ?: false,
-                isBookmarked = viewModel.isCurrentPageBookmarked(),
-                isDesktopMode = activeTab?.isDesktopMode ?: false,
-                onBack = { viewModel.goBack() },
-                onForward = { viewModel.goForward() },
-                onHome = { viewModel.navigate("titan://newtab") },
-                onToggleBookmark = { viewModel.toggleBookmarkCurrentPage() },
-                onReload = { viewModel.reload() },
-                onNewTab = { viewModel.openNewTab() },
-                onOpenBookmarks = { viewModel.setBookmarksVisible(true) },
-                onFindInPage = { viewModel.setFindInPageVisible(true) },
-                onToggleDesktopMode = { viewModel.toggleDesktopMode() },
-                onShare = {
-                    activeTab?.let { tab ->
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, tab.title)
-                            putExtra(Intent.EXTRA_TEXT, tab.url)
-                        }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share link"))
-                    }
-                },
-                onOpenSettings = { viewModel.setSettingsVisible(true) },
-                onDismiss = { viewModel.setMenuVisible(false) }
-            )
-        }
-
+        BrowserMenuHost(
+            viewModel = viewModel,
+            activeTab = activeTab,
+            isBookmarked = activeTab?.let { tab -> bookmarks.any { it.url == tab.url } } == true
+        )
 
         // Fullscreen YouTube / HTML5 Video Overlay Container
         fullscreenView?.let { customView ->
@@ -293,4 +247,74 @@ fun BrowserScreen(
             }
         }
     }
+}
+
+@Composable
+private fun BrowserToolbar(
+    viewModel: BrowserViewModel,
+    currentUrl: String,
+    tabCount: Int,
+    canShow: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val loadingProgress by viewModel.loadingProgress.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val isToolbarVisible by viewModel.isToolbarVisible.collectAsState()
+
+    AnimatedVisibility(
+        visible = canShow && isToolbarVisible,
+        enter = slideInVertically(initialOffsetY = { it }),
+        exit = slideOutVertically(targetOffsetY = { it }),
+        modifier = modifier
+    ) {
+        BottomToolbar(
+            currentUrl = currentUrl,
+            isLoading = isLoading,
+            progress = loadingProgress,
+            tabCount = tabCount,
+            onNavigate = viewModel::navigate,
+            onReloadOrStop = viewModel::reload,
+            onTabsClick = { viewModel.setTabGridVisible(true) },
+            onMenuClick = { viewModel.setMenuVisible(true) }
+        )
+    }
+}
+
+@Composable
+private fun BrowserMenuHost(
+    viewModel: BrowserViewModel,
+    activeTab: Tab?,
+    isBookmarked: Boolean
+) {
+    val isMenuVisible by viewModel.isMenuVisible.collectAsState()
+    if (!isMenuVisible) return
+
+    val context = LocalContext.current
+    MenuBottomSheet(
+        canGoBack = activeTab?.canGoBack ?: false,
+        canGoForward = activeTab?.canGoForward ?: false,
+        isBookmarked = isBookmarked,
+        isDesktopMode = activeTab?.isDesktopMode ?: false,
+        onBack = viewModel::goBack,
+        onForward = viewModel::goForward,
+        onHome = { viewModel.navigate("titan://newtab") },
+        onToggleBookmark = viewModel::toggleBookmarkCurrentPage,
+        onReload = viewModel::reload,
+        onNewTab = viewModel::openNewTab,
+        onOpenBookmarks = { viewModel.setBookmarksVisible(true) },
+        onFindInPage = { viewModel.setFindInPageVisible(true) },
+        onToggleDesktopMode = viewModel::toggleDesktopMode,
+        onShare = {
+            activeTab?.let { tab ->
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, tab.title)
+                    putExtra(Intent.EXTRA_TEXT, tab.url)
+                }
+                context.startActivity(Intent.createChooser(shareIntent, "Share link"))
+            }
+        },
+        onOpenSettings = { viewModel.setSettingsVisible(true) },
+        onDismiss = { viewModel.setMenuVisible(false) }
+    )
 }
