@@ -78,7 +78,16 @@ impl StorageManager {
 
     pub fn load_settings(&self) -> BrowserSettings {
         if let Ok(data) = fs::read_to_string(&self.settings_file) {
-            if let Ok(settings) = serde_json::from_str::<BrowserSettings>(&data) {
+            if let Ok(mut settings) = serde_json::from_str::<BrowserSettings>(&data) {
+                if !settings
+                    .adblock_filter_lists
+                    .iter()
+                    .any(|list_id| list_id == "turtlecute_test")
+                {
+                    settings
+                        .adblock_filter_lists
+                        .push("turtlecute_test".to_string());
+                }
                 return settings;
             }
         }

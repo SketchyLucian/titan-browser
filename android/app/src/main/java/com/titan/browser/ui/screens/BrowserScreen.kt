@@ -52,6 +52,7 @@ fun BrowserScreen(
     val fullscreenView by viewModel.customFullscreenView.collectAsState()
     val loadingProgress by viewModel.loadingProgress.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isToolbarVisible by viewModel.isToolbarVisible.collectAsState()
 
     val activeTab = tabs.firstOrNull { it.id == activeTabId }
 
@@ -146,9 +147,22 @@ fun BrowserScreen(
                     }
                 }
             }
+        }
 
-
-            // Firefox Android Style Bottom Search & Navigation Bar
+        // Firefox Android Style Bottom Search & Navigation Bar
+        AnimatedVisibility(
+            visible = isToolbarVisible &&
+                fullscreenView == null &&
+                !isSettingsVisible &&
+                !isTabGridVisible &&
+                !isBookmarksVisible &&
+                !isMenuVisible,
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it }),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .imePadding()
+        ) {
             BottomToolbar(
                 currentUrl = activeTab?.url ?: "titan://newtab",
                 isLoading = isLoading,
@@ -194,6 +208,8 @@ fun BrowserScreen(
                 onToggleBlockVideoAds = { viewModel.toggleBlockVideoAds(it) },
                 onToggleCosmeticFiltering = { viewModel.toggleCosmeticFiltering(it) },
                 onToggleBlockPopups = { viewModel.toggleBlockPopups(it) },
+                onToggleAggressiveAdblock = { viewModel.toggleAggressiveAdblock(it) },
+                onToggleFilterList = { listId, enabled -> viewModel.toggleAdblockFilterList(listId, enabled) },
                 onToggleStripTrackingParameters = { viewModel.toggleStripTrackingParameters(it) },
                 onToggleAutoUpdate = { viewModel.toggleAutoUpdate(it) },
                 onCheckForUpdates = { viewModel.checkForUpdates() },

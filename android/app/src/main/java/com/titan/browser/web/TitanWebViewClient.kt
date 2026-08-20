@@ -20,6 +20,9 @@ class TitanWebViewClient(
     private val onErrorCallback: (errorCode: Int, description: String, failingUrl: String) -> Unit
 ) : WebViewClient() {
 
+    @Volatile
+    private var currentPageUrl: String = ""
+
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
         val rawUrl = request?.url?.toString() ?: return false
         val settings = settingsProvider()
@@ -49,12 +52,25 @@ class TitanWebViewClient(
     }
 
     companion object {
-        // Reuse a static empty response instance to eliminate allocations on blocked assets
-        private val EMPTY_RESPONSE = WebResourceResponse(
-            "text/plain",
-            "UTF-8",
-            ByteArrayInputStream(ByteArray(0))
-        )
+        private fun blockedResponse(requestType: String): WebResourceResponse {
+            val isScriptLike = requestType == "script" || requestType == "subdocument"
+            val statusCode = if (isScriptLike) 403 else 204
+            val reasonPhrase = if (isScriptLike) "Forbidden" else "No Content"
+            val mimeType = if (requestType == "script") "application/javascript" else "text/plain"
+
+            return WebResourceResponse(
+                mimeType,
+                "UTF-8",
+                statusCode,
+                reasonPhrase,
+                mapOf(
+                    "Cache-Control" to "no-store",
+                    "Content-Length" to "0",
+                    "X-Titan-Adblock" to "1"
+                ),
+                ByteArrayInputStream(ByteArray(0))
+            )
+        }
     }
 
     override fun shouldInterceptRequest(
@@ -69,7 +85,7 @@ class TitanWebViewClient(
         val uri = request.url ?: return super.shouldInterceptRequest(view, request)
         val host = uri.host ?: ""
 
-        // Fast-path bypass for benchmarks, local hosts, and first-party clean assets
+        // Fast-path bypass for benchmarks and local hosts
         if (host.isEmpty() || host.contains("browserbench") || host.contains("speedometer") ||
             host.contains("localhost") || host.contains("127.0.0.1")
         ) {
@@ -77,8 +93,10 @@ class TitanWebViewClient(
         }
 
         val reqUrl = uri.toString()
-        if (AdblockManager.isBlockedUrl(reqUrl, settings.aggressiveMode)) {
-            return EMPTY_RESPONSE
+        val pageUrl = request.requestHeaders["Referer"].orEmpty().ifBlank { currentPageUrl }
+        val requestType = inferRequestType(reqUrl, request.isForMainFrame)
+        if (AdblockManager.isBlockedUrl(reqUrl, settings, pageUrl, requestType)) {
+            return blockedResponse(requestType)
         }
 
         return super.shouldInterceptRequest(view, request)
@@ -87,10 +105,11 @@ class TitanWebViewClient(
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
         if (url != null) {
+            currentPageUrl = url
             onPageStartedCallback(url)
             val settings = settingsProvider()
             if (settings.adblockEnabled && view != null && !url.contains("browserbench") && !url.contains("speedometer")) {
-                val script = AdblockManager.getInjectionScript(settings)
+                val script = AdblockManager.getInjectionScript(settings, url)
                 if (script.isNotEmpty()) {
                     view.evaluateJavascript(script, null)
                 }
@@ -101,9 +120,10 @@ class TitanWebViewClient(
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
         if (url != null && view != null) {
+            currentPageUrl = url
             val settings = settingsProvider()
             if (settings.adblockEnabled && !url.contains("browserbench") && !url.contains("speedometer")) {
-                val script = AdblockManager.getInjectionScript(settings)
+                val script = AdblockManager.getInjectionScript(settings, url)
                 if (script.isNotEmpty()) {
                     view.evaluateJavascript(script, null)
                 }
@@ -126,5 +146,24 @@ class TitanWebViewClient(
             )
         }
     }
-}
 
+    private fun inferRequestType(url: String, isMainFrame: Boolean): String {
+        if (isMainFrame) return "document"
+
+        val lower = url.lowercase()
+        return when {
+            lower.endsWith(".js") || lower.contains(".js?") -> "script"
+            lower.endsWith(".css") || lower.contains(".css?") -> "stylesheet"
+            lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
+                lower.endsWith(".gif") || lower.endsWith(".webp") || lower.endsWith(".svg") ||
+                lower.contains(".png?") || lower.contains(".jpg?") || lower.contains(".jpeg?") ||
+                lower.contains(".gif?") || lower.contains(".webp?") || lower.contains(".svg?") -> "image"
+            lower.endsWith(".mp4") || lower.endsWith(".webm") || lower.endsWith(".m3u8") ||
+                lower.contains(".mp4?") || lower.contains(".webm?") || lower.contains(".m3u8?") -> "media"
+            lower.endsWith(".woff") || lower.endsWith(".woff2") || lower.endsWith(".ttf") ||
+                lower.contains(".woff?") || lower.contains(".woff2?") || lower.contains(".ttf?") -> "font"
+            lower.contains("/xhr") || lower.contains("/api/") || lower.contains("log_event") -> "xhr"
+            else -> "other"
+        }
+    }
+}

@@ -71,6 +71,7 @@ impl BrowserManager {
             "ublock_badware",
             "ublock_privacy",
             "ublock_quick_fixes",
+            "turtlecute_test",
         ] {
             let enabled = settings.adblock_filter_lists.iter().any(|l| l == list);
             adblock_manager.toggle_filter_list(list, enabled);
@@ -567,7 +568,7 @@ impl BrowserManager {
                             const reqUrl = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
                             if (isBlockedUrl(reqUrl, 'fetch')) {{
                                 reportBlocked(reqUrl, 'fetch');
-                                return new Response('', {{ status: 200, statusText: 'OK (Blocked by Titan Shield)' }});
+                                throw new TypeError('Failed to fetch');
                             }}
                             return origFetch.apply(this, args);
                         }};
