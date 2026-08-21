@@ -5,6 +5,7 @@ interface Tab {
   is_loading: boolean;
   can_go_back: boolean;
   can_go_forward: boolean;
+  is_private: boolean;
   favicon?: string;
 }
 
@@ -111,6 +112,7 @@ interface SettingsInitState extends Partial<BrowserState> {
 type IpcOutMessage =
   | { type: 'UiReady' }
   | { type: 'NewTab'; url?: string }
+  | { type: 'NewPrivateTab' }
   | { type: 'CloseTab'; tab_id: number }
   | { type: 'SwitchTab'; tab_id: number }
   | { type: 'Navigate'; url: string }
@@ -150,6 +152,12 @@ type IpcOutMessage =
   | { type: 'ReportBlockedAd'; domain: string; url: string; req_type: string }
   | { type: 'OpenThemes' }
   | { type: 'OpenSettings' }
+  | { type: 'OpenHistory' }
+  | { type: 'ClearHistory' }
+  | { type: 'OpenDownloads' }
+  | { type: 'ClearDownloads' }
+  | { type: 'OpenDownload'; download_id: number }
+  | { type: 'OpenDefaultBrowserSettings' }
   | { type: 'OpenPrivacy' }
   | { type: 'OpenAdblock' }
   | { type: 'ShowBookmarkContextMenu'; url: string }

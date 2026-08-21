@@ -11,8 +11,12 @@ import android.webkit.WebView
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.titan.browser.model.Bookmark
+import com.titan.browser.model.BrowserSession
 import com.titan.browser.model.BrowserSettings
+import com.titan.browser.model.HistoryEntry
+import com.titan.browser.model.PersistedTab
 import com.titan.browser.model.SearchEngine
+import com.titan.browser.model.SessionPolicy
 import com.titan.browser.model.Tab
 import com.titan.browser.model.UpdateState
 import com.titan.browser.model.UpdateStatus
@@ -21,23 +25,44 @@ import com.titan.browser.update.UpdateChecker
 import com.titan.browser.BuildConfig
 import com.titan.browser.web.AdblockFilterUpdater
 import com.titan.browser.web.AdblockManager
+import com.titan.browser.web.BrowserHostDelegate
+import com.titan.browser.web.DownloadRequestSpec
 import com.titan.browser.web.PrivacyManager
 import com.titan.browser.web.TitanWebChromeClient
 import com.titan.browser.web.TitanWebViewClient
 import com.titan.browser.web.TitanWebViewFactory
 import com.titan.browser.web.UrlUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.lang.ref.WeakReference
 import kotlin.math.abs
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
 
     private val storageManager = StorageManager(application)
+    private var hostDelegate = WeakReference<BrowserHostDelegate>(null)
+    private var initialized = false
+    private var isRestoringSession = false
+    private var hostResumed = false
+    private var pendingExternalUrl: String? = null
+    private var sessionSaveJob: Job? = null
+
+    fun attachBrowserHost(delegate: BrowserHostDelegate) {
+        hostDelegate = WeakReference(delegate)
+    }
+
+    fun detachBrowserHost(delegate: BrowserHostDelegate) {
+        if (hostDelegate.get() === delegate) {
+            hostDelegate.clear()
+        }
+    }
 
     private val _tabs = MutableStateFlow<List<Tab>>(emptyList())
     val tabs: StateFlow<List<Tab>> = _tabs.asStateFlow()
@@ -47,6 +72,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val _bookmarks = MutableStateFlow<List<Bookmark>>(emptyList())
     val bookmarks: StateFlow<List<Bookmark>> = _bookmarks.asStateFlow()
+
+    private val _history = MutableStateFlow<List<HistoryEntry>>(emptyList())
+    val history: StateFlow<List<HistoryEntry>> = _history.asStateFlow()
 
     private val _settings = MutableStateFlow(BrowserSettings())
     val settings: StateFlow<BrowserSettings> = _settings.asStateFlow()
@@ -65,6 +93,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val _isBookmarksVisible = MutableStateFlow(false)
     val isBookmarksVisible: StateFlow<Boolean> = _isBookmarksVisible.asStateFlow()
+
+    private val _isHistoryVisible = MutableStateFlow(false)
+    val isHistoryVisible: StateFlow<Boolean> = _isHistoryVisible.asStateFlow()
 
     private val _isSettingsVisible = MutableStateFlow(false)
     val isSettingsVisible: StateFlow<Boolean> = _isSettingsVisible.asStateFlow()
@@ -89,34 +120,113 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         loadData()
-        // Open default initial tab (Titan New Tab)
-        openNewTab("titan://newtab")
     }
+
+    private data class LoadedData(
+        val bookmarks: List<Bookmark>,
+        val filterLists: Map<String, String>,
+        val settings: BrowserSettings,
+        val history: List<HistoryEntry>,
+        val session: BrowserSession
+    )
 
     private fun loadData() {
         viewModelScope.launch {
             val filterSourceIds = AdblockManager.filterListSources.map { it.id }
-            val (loadedBookmarks, cachedFilterLists, loadedSettings) = withContext(Dispatchers.IO) {
-                Triple(
-                    storageManager.loadBookmarks(),
-                    storageManager.loadAdblockFilterLists(filterSourceIds),
-                    storageManager.loadSettings()
+            val loaded = withContext(Dispatchers.IO) {
+                LoadedData(
+                    bookmarks = storageManager.loadBookmarks(),
+                    filterLists = storageManager.loadAdblockFilterLists(filterSourceIds),
+                    settings = storageManager.loadSettings(),
+                    history = storageManager.loadHistory(),
+                    session = storageManager.loadSession()
                 )
             }
 
-            _bookmarks.value = loadedBookmarks
-            _settings.value = loadedSettings
+            _bookmarks.value = loaded.bookmarks
+            _history.value = loaded.history
+            _settings.value = loaded.settings
             withContext(Dispatchers.Default) {
-                AdblockManager.setCachedFilterLists(cachedFilterLists)
-                AdblockManager.prepare(loadedSettings)
+                AdblockManager.setCachedFilterLists(loaded.filterLists)
+                AdblockManager.prepare(loaded.settings)
             }
-            if (loadedSettings.adblockEnabled && loadedSettings.autoUpdateFilterLists) {
+            restoreSession(loaded.session)
+            initialized = true
+            scheduleSessionSave()
+            pendingExternalUrl?.also {
+                pendingExternalUrl = null
+                openUrlFromExternalIntent(it)
+            }
+            if (loaded.settings.adblockEnabled && loaded.settings.autoUpdateFilterLists) {
                 refreshAdblockFilterLists()
             }
-            if (loadedSettings.autoUpdateEnabled) {
+            if (loaded.settings.autoUpdateEnabled) {
                 checkForUpdates()
             }
         }
+    }
+
+    private fun restoreSession(session: BrowserSession) {
+        isRestoringSession = true
+        val persistedTabs = session.tabs
+            .take(25)
+            .filter { SessionPolicy.isRestorableUrl(it.url) }
+        if (persistedTabs.isEmpty()) {
+            openNewTab("titan://newtab")
+            isRestoringSession = false
+            return
+        }
+
+        val restoredTabs = persistedTabs.map { persisted ->
+            Tab(
+                url = if (persisted.url == "about:blank") "titan://newtab" else persisted.url,
+                title = persisted.title.ifBlank { "New Tab" },
+                isDesktopMode = persisted.isDesktopMode,
+                webView = null
+            )
+        }
+        _tabs.value = restoredTabs
+        _activeTabId.value = null
+        val activeIndex = session.activeIndex.coerceIn(0, restoredTabs.lastIndex)
+        switchTab(restoredTabs[activeIndex].id)
+        isRestoringSession = false
+        scheduleSessionSave()
+    }
+
+    private fun scheduleSessionSave() {
+        if (!initialized || isRestoringSession) return
+        val session = currentSession()
+        sessionSaveJob?.cancel()
+        sessionSaveJob = viewModelScope.launch {
+            delay(250)
+            withContext(Dispatchers.IO) {
+                storageManager.saveSession(session)
+            }
+        }
+    }
+
+    private fun currentSession(): BrowserSession {
+        val currentTabs = _tabs.value.filterNot { it.isPrivate }
+        val activeIndex = _activeTabId.value
+            ?.let { id -> currentTabs.indexOfFirst { it.id == id } }
+            ?.takeIf { it >= 0 }
+            ?: 0
+        return BrowserSession(
+            tabs = currentTabs.map {
+                PersistedTab(
+                    url = it.url,
+                    title = it.title,
+                    isDesktopMode = it.isDesktopMode
+                )
+            },
+            activeIndex = activeIndex
+        )
+    }
+
+    private fun saveSessionNow() {
+        if (!initialized || isRestoringSession) return
+        sessionSaveJob?.cancel()
+        storageManager.saveSession(currentSession())
     }
 
     fun getActiveTab(): Tab? {
@@ -125,6 +235,20 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun openNewTab(url: String = "titan://newtab") {
+        openTab(url, isPrivate = false)
+    }
+
+    fun openPrivateTab() {
+        if (!TitanWebViewFactory.isPrivateModeSupported()) {
+            hostDelegate.get()?.onShowBrowserMessage(
+                "Private tabs require a newer Android System WebView"
+            )
+            return
+        }
+        openTab("titan://newtab", isPrivate = true)
+    }
+
+    private fun openTab(url: String, isPrivate: Boolean) {
         // Pause previous active tab to save CPU cycles and battery
         getActiveTab()?.webView?.onPause()
 
@@ -137,17 +261,31 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             )
             if (_settings.value.stripTrackingParameters) UrlUtils.stripTrackingParameters(norm) else norm
         }
-        val newTab = createTabInstance(normalizedUrl)
+        val newTab = createTabInstance(normalizedUrl, isPrivate)
 
         _tabs.update { it + newTab }
         _activeTabId.value = newTab.id
+        resumeWebViewIfHostActive(newTab.webView)
         _loadingProgress.value = 0
         _isLoading.value = false
         _isToolbarVisible.value = true
         _isTabGridVisible.value = false
+        scheduleSessionSave()
+    }
+
+    fun openDownloads() {
+        hostDelegate.get()?.onOpenDownloads()
+    }
+
+    fun openDefaultBrowserSettings() {
+        hostDelegate.get()?.onOpenDefaultBrowserSettings()
     }
 
     fun openUrlFromExternalIntent(url: String) {
+        if (!initialized) {
+            pendingExternalUrl = url
+            return
+        }
         val active = getActiveTab()
         if (active?.url == "titan://newtab" && active.webView == null) {
             navigate(url)
@@ -156,7 +294,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun createTabInstance(initialUrl: String): Tab {
+    private fun createTabInstance(initialUrl: String, isPrivate: Boolean): Tab {
         val tabId = java.util.UUID.randomUUID().toString()
         val isNewTab = initialUrl == "titan://newtab" || initialUrl == "about:blank"
 
@@ -165,24 +303,30 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 id = tabId,
                 url = "titan://newtab",
                 title = "New Tab",
+                isPrivate = isPrivate,
                 webView = null
             )
         }
 
-        val webView = createConfiguredWebView(tabId)
+        val webView = createConfiguredWebView(tabId, isPrivate)
         webView.loadUrl(initialUrl, PrivacyManager.navigationHeaders(_settings.value))
 
         return Tab(
             id = tabId,
             url = initialUrl,
             title = "Loading...",
+            isPrivate = isPrivate,
             webView = webView
         )
     }
 
-    private fun createConfiguredWebView(tabId: String): WebView {
+    private fun createConfiguredWebView(tabId: String, isPrivate: Boolean): WebView {
         val context = getApplication<Application>()
-        val webView = TitanWebViewFactory.createWebView(context, _settings.value)
+        val webView = TitanWebViewFactory.createWebView(
+            context,
+            _settings.value,
+            isPrivate = isPrivate
+        )
         webView.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
             if (_activeTabId.value == tabId) {
                 updateToolbarVisibilityForScroll(scrollY, oldScrollY)
@@ -212,8 +356,31 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 hideFullscreenVideo()
             },
             settingsProvider = { _settings.value },
-            onCreatePopupTab = { createPopupTab() }
+            onCreatePopupTab = { createPopupTab(isPrivate) },
+            onShowFileChooserRequest = { callback, params ->
+                hostDelegate.get()?.onShowFileChooser(callback, params) ?: false
+            },
+            onGeolocationPermissionRequest = { origin, callback ->
+                hostDelegate.get()?.onGeolocationPermissionRequest(origin, callback)
+                    ?: callback.invoke(origin, false, false)
+            },
+            onWebPermissionRequest = { request ->
+                hostDelegate.get()?.onWebPermissionRequest(request) ?: request.deny()
+            }
         )
+
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
+            val request = DownloadRequestSpec(
+                url = url,
+                userAgent = userAgent,
+                contentDisposition = contentDisposition,
+                mimeType = mimeType,
+                contentLength = contentLength,
+                referringUrl = webView.url,
+                cookieHeader = TitanWebViewFactory.cookieHeader(webView, url)
+            )
+            hostDelegate.get()?.onDownloadRequested(request)
+        }
 
         webView.webViewClient = TitanWebViewClient(
             context = context,
@@ -239,6 +406,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         canGoForward = canGoForward
                     )
                 }
+                recordHistoryVisit(tabId, pageUrl)
             },
             onErrorCallback = { _, _, _ ->
                 if (_activeTabId.value == tabId) {
@@ -251,21 +419,23 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         return webView
     }
 
-    private fun createPopupTab(): WebView {
+    private fun createPopupTab(isPrivate: Boolean): WebView {
         getActiveTab()?.webView?.onPause()
 
         val tabId = java.util.UUID.randomUUID().toString()
-        val webView = createConfiguredWebView(tabId)
+        val webView = createConfiguredWebView(tabId, isPrivate)
         val tab = Tab(
             id = tabId,
             url = "about:blank",
             title = "Loading...",
             webView = webView,
-            isLoading = true
+            isLoading = true,
+            isPrivate = isPrivate
         )
 
         _tabs.update { it + tab }
         _activeTabId.value = tabId
+        resumeWebViewIfHostActive(webView)
         _loadingProgress.value = 10
         _isLoading.value = true
         _isToolbarVisible.value = true
@@ -276,6 +446,19 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private fun updateTab(tabId: String, transform: (Tab) -> Tab) {
         _tabs.update { list ->
             list.map { if (it.id == tabId) transform(it) else it }
+        }
+        scheduleSessionSave()
+    }
+
+    private fun recordHistoryVisit(tabId: String, url: String) {
+        if (!SessionPolicy.isRestorableUrl(url) || url.startsWith("titan://")) return
+        val tab = _tabs.value.firstOrNull { it.id == tabId } ?: return
+        if (tab.isPrivate) return
+        val title = tab.title
+        viewModelScope.launch {
+            _history.value = withContext(Dispatchers.IO) {
+                storageManager.recordHistoryVisit(title, url)
+            }
         }
     }
 
@@ -291,13 +474,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _activeTabId.value = tabId
 
         val resumedTab = if (nextTab.webView == null && nextTab.url != "titan://newtab") {
-            val webView = createConfiguredWebView(nextTab.id)
+            val webView = createConfiguredWebView(nextTab.id, nextTab.isPrivate)
             val restoredTab = nextTab.copy(webView = webView, isLoading = true)
             updateTab(nextTab.id) { restoredTab }
             webView.loadUrl(nextTab.url, PrivacyManager.navigationHeaders(_settings.value))
+            resumeWebViewIfHostActive(webView)
             restoredTab
         } else {
-            nextTab.webView?.onResume()
+            resumeWebViewIfHostActive(nextTab.webView)
             nextTab
         }
 
@@ -305,6 +489,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _loadingProgress.value = if (resumedTab.isLoading) 10 else 100
         _isToolbarVisible.value = true
         _isTabGridVisible.value = false
+        scheduleSessionSave()
     }
 
     fun closeTab(tabId: String) {
@@ -314,17 +499,21 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         val updatedTabs = currentTabs.filterNot { it.id == tabId }
         _tabs.value = updatedTabs
+        if (tabToClose?.isPrivate == true && updatedTabs.none { it.isPrivate }) {
+            TitanWebViewFactory.clearPrivateProfile()
+        }
 
         if (updatedTabs.isEmpty()) {
             openNewTab("titan://newtab")
         } else if (_activeTabId.value == tabId) {
             val nextTab = updatedTabs.last()
-            nextTab.webView?.onResume()
+            resumeWebViewIfHostActive(nextTab.webView)
             _activeTabId.value = nextTab.id
             _isLoading.value = nextTab.isLoading
             _loadingProgress.value = if (nextTab.isLoading) 50 else 100
             _isToolbarVisible.value = true
         }
+        scheduleSessionSave()
     }
 
     fun navigate(rawInput: String) {
@@ -346,6 +535,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                     webView = null
                 )
             }
+            scheduleSessionSave()
             return
         }
         var url = UrlUtils.normalizeOrSearch(
@@ -358,7 +548,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _loadingProgress.value = 10
         _isLoading.value = true
         _isToolbarVisible.value = true
-        val webView = active.webView ?: createConfiguredWebView(active.id)
+        val webView = active.webView ?: createConfiguredWebView(active.id, active.isPrivate)
         updateTab(active.id) {
             it.copy(
                 url = url,
@@ -368,6 +558,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             )
         }
         webView.loadUrl(url, PrivacyManager.navigationHeaders(_settings.value))
+        resumeWebViewIfHostActive(webView)
+        scheduleSessionSave()
     }
 
 
@@ -410,6 +602,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             it.reload()
         }
         updateTab(active.id) { it.copy(isDesktopMode = newMode) }
+        scheduleSessionSave()
     }
 
     fun toggleBookmarkCurrentPage() {
@@ -557,6 +750,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 clearFormData()
             }
         }
+        storageManager.clearHistory()
+        _history.value = emptyList()
     }
 
     fun toggleAutoUpdate(enabled: Boolean) {
@@ -593,17 +788,24 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onHostResume() {
-        getActiveTab()?.webView?.apply {
-            resumeTimers()
-            onResume()
-        }
+        hostResumed = true
+        resumeWebViewIfHostActive(getActiveTab()?.webView)
     }
 
     fun onHostPause() {
+        hostResumed = false
+        CookieManager.getInstance().flush()
+        saveSessionNow()
         getActiveTab()?.webView?.apply {
             onPause()
             pauseTimers()
         }
+    }
+
+    private fun resumeWebViewIfHostActive(webView: WebView?) {
+        if (!hostResumed || webView == null) return
+        webView.resumeTimers()
+        webView.onResume()
     }
 
     @Suppress("DEPRECATION")
@@ -661,6 +863,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _isBookmarksVisible.value = visible
     }
 
+    fun setHistoryVisible(visible: Boolean) {
+        _isToolbarVisible.value = true
+        _isHistoryVisible.value = visible
+    }
+
     fun setSettingsVisible(visible: Boolean) {
         _isToolbarVisible.value = true
         _isSettingsVisible.value = visible
@@ -672,7 +879,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     override fun onCleared() {
-        super.onCleared()
+        saveSessionNow()
         _tabs.value.forEach { it.webView?.destroy() }
+        TitanWebViewFactory.clearPrivateProfile()
+        super.onCleared()
     }
 }

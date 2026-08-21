@@ -24,6 +24,36 @@ pub struct IpcTabInfo {
     pub is_loading: bool,
     pub can_go_back: bool,
     pub can_go_forward: bool,
+    pub is_private: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HistoryEntry {
+    pub title: String,
+    pub url: String,
+    pub last_visited_ms: u64,
+    pub visit_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SessionTab {
+    pub url: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BrowserSession {
+    pub tabs: Vec<SessionTab>,
+    pub active_index: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DownloadRecord {
+    pub id: u64,
+    pub url: String,
+    pub file_path: Option<String>,
+    pub status: String,
+    pub started_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,6 +220,7 @@ pub enum IpcIncoming {
     NewTab {
         url: Option<String>,
     },
+    NewPrivateTab,
     CloseTab {
         tab_id: u32,
     },
@@ -203,6 +234,7 @@ pub enum IpcIncoming {
     GoForward,
     Reload,
     GoHome,
+    FocusAddressBar,
     SetZoom {
         zoom: f64,
     },
@@ -298,6 +330,14 @@ pub enum IpcIncoming {
         req_type: String,
     },
     OpenSettings,
+    OpenHistory,
+    ClearHistory,
+    OpenDownloads,
+    ClearDownloads,
+    OpenDownload {
+        download_id: u64,
+    },
+    OpenDefaultBrowserSettings,
     OpenThemes,
     OpenPrivacy,
     OpenAdblock,
@@ -346,5 +386,12 @@ mod tests {
         } else {
             panic!("Failed to parse SetAdblockSetting");
         }
+    }
+
+    #[test]
+    fn parses_focus_address_bar_command() {
+        let incoming = serde_json::from_str::<IpcIncoming>(r#"{"type":"FocusAddressBar"}"#);
+
+        assert!(matches!(incoming, Ok(IpcIncoming::FocusAddressBar)));
     }
 }

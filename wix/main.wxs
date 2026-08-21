@@ -20,6 +20,30 @@
                    Bitness="always64">
           <File Id="TitanBrowserExe" Source="target\release\titan-browser.exe" KeyPath="yes" />
         </Component>
+        <Component Id="DefaultBrowserRegistration"
+                   Guid="E2A80D80-1DF7-4A98-8705-71C360CA5D5E"
+                   Bitness="always64">
+          <RegistryValue Root="HKLM"
+                         Key="Software\RegisteredApplications"
+                         Name="Titan Browser"
+                         Type="string"
+                         Value="Software\Clients\StartMenuInternet\TitanBrowser\Capabilities"
+                         KeyPath="yes" />
+          <RegistryValue Root="HKLM" Key="Software\Clients\StartMenuInternet\TitanBrowser" Type="string" Value="Titan Browser" />
+          <RegistryValue Root="HKLM" Key="Software\Clients\StartMenuInternet\TitanBrowser\DefaultIcon" Type="string" Value="[#TitanBrowserExe],0" />
+          <RegistryValue Root="HKLM" Key="Software\Clients\StartMenuInternet\TitanBrowser\shell\open\command" Type="string" Value="&quot;[#TitanBrowserExe]&quot;" />
+          <RegistryValue Root="HKLM" Key="Software\Clients\StartMenuInternet\TitanBrowser\Capabilities" Name="ApplicationName" Type="string" Value="Titan Browser" />
+          <RegistryValue Root="HKLM" Key="Software\Clients\StartMenuInternet\TitanBrowser\Capabilities" Name="ApplicationDescription" Type="string" Value="A fast, privacy-focused web browser." />
+          <RegistryValue Root="HKLM" Key="Software\Clients\StartMenuInternet\TitanBrowser\Capabilities" Name="ApplicationIcon" Type="string" Value="[#TitanBrowserExe],0" />
+          <RegistryValue Root="HKLM" Key="Software\Clients\StartMenuInternet\TitanBrowser\Capabilities\URLAssociations" Name="http" Type="string" Value="TitanBrowserHTML" />
+          <RegistryValue Root="HKLM" Key="Software\Clients\StartMenuInternet\TitanBrowser\Capabilities\URLAssociations" Name="https" Type="string" Value="TitanBrowserHTML" />
+          <RegistryValue Root="HKLM" Key="Software\Classes\TitanBrowserHTML" Type="string" Value="Titan Browser URL" />
+          <RegistryValue Root="HKLM" Key="Software\Classes\TitanBrowserHTML" Name="URL Protocol" Type="string" Value="" />
+          <RegistryValue Root="HKLM" Key="Software\Classes\TitanBrowserHTML\DefaultIcon" Type="string" Value="[#TitanBrowserExe],0" />
+          <RegistryValue Root="HKLM" Key="Software\Classes\TitanBrowserHTML\shell\open\command" Type="string" Value="&quot;[#TitanBrowserExe]&quot; &quot;%1&quot;" />
+          <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\titan-browser.exe" Type="string" Value="[#TitanBrowserExe]" />
+          <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\titan-browser.exe" Name="Path" Type="string" Value="[INSTALLFOLDER]" />
+        </Component>
       </Directory>
     </StandardDirectory>
 
@@ -60,6 +84,7 @@
 
     <Feature Id="MainFeature" Title="Titan Browser Application" Level="1">
       <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="DefaultBrowserRegistration" />
       <ComponentRef Id="ApplicationShortcut" />
       <ComponentRef Id="DesktopShortcutComp" />
     </Feature>

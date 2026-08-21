@@ -125,6 +125,24 @@ const config = __TITAN_ANDROID_ADBLOCK_CONFIG__;
             };
         } catch(e) {}
 
+        try {
+            document.addEventListener('click', function(event) {
+                if ((event as any).defaultPrevented) return;
+                let node = event.target as HTMLElement | null;
+                while (node && node !== document.documentElement && node.tagName !== 'A') {
+                    node = node.parentElement;
+                }
+                const anchor = node as HTMLAnchorElement | null;
+                if (!anchor || anchor.tagName !== 'A') return;
+                const target = String(anchor.target || '').toLowerCase();
+                if (target !== '_blank') return;
+                const href = anchor.href;
+                if (!href || !/^https?:\/\//i.test(href)) return;
+                event.preventDefault();
+                window.open(href, '_blank', anchor.rel || undefined);
+            }, true);
+        } catch(e) {}
+
         if (window.fetch) {
             const origFetch = window.fetch;
             window.fetch = async function(...args) {
@@ -181,43 +199,6 @@ const config = __TITAN_ANDROID_ADBLOCK_CONFIG__;
         if (window.HTMLScriptElement) hookElementSrc(HTMLScriptElement.prototype, 'https://titan-blocked.invalid/ads/blocked.js');
         if (window.HTMLIFrameElement) hookElementSrc(HTMLIFrameElement.prototype, 'about:blank');
         if (window.HTMLImageElement) hookElementSrc(HTMLImageElement.prototype, 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
-
-        if (blockPopups && window.open) {
-            const origOpen = window.open;
-
-            function targetsCurrentBrowsingContext(target) {
-                const normalizedTarget = String(target || '').trim().toLowerCase();
-                if (normalizedTarget === '_self' || normalizedTarget === '_top' || normalizedTarget === '_parent') {
-                    return true;
-                }
-                if (!normalizedTarget || normalizedTarget === '_blank') return false;
-
-                return Array.from(document.getElementsByName(String(target))).some(element => {
-                    const tagName = String(element.tagName || '').toLowerCase();
-                    return tagName === 'iframe' || tagName === 'frame';
-                });
-            }
-
-            window.open = function(url, target, features) {
-                if (!targetsCurrentBrowsingContext(target)) return null;
-                return origOpen.call(this, url, target, features);
-            };
-
-            document.addEventListener('click', event => {
-                if (!event.isTrusted || event.defaultPrevented || event.button !== 0) return;
-                const target = event.target instanceof Element ? event.target : null;
-                const anchor = target?.closest('a[href][target]');
-                if (!anchor || targetsCurrentBrowsingContext(anchor.getAttribute('target'))) return;
-                anchor.setAttribute('target', '_self');
-            }, true);
-
-            document.addEventListener('submit', event => {
-                if (!event.isTrusted || event.defaultPrevented) return;
-                const form = event.target instanceof HTMLFormElement ? event.target : null;
-                if (!form || targetsCurrentBrowsingContext(form.getAttribute('target'))) return;
-                form.setAttribute('target', '_self');
-            }, true);
-        }
 
         if (cosmeticFiltering) {
             const scamSelectors = [

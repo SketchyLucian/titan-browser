@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -12,6 +14,21 @@ val npmExecutable = if (System.getProperty("os.name").startsWith("Windows", igno
 } else {
     "npm"
 }
+
+fun releaseSecret(name: String): String? = providers.gradleProperty(name)
+    .orElse(providers.environmentVariable(name))
+    .orNull
+
+val releaseStoreFile = releaseSecret("TITAN_RELEASE_STORE_FILE")
+val releaseStorePassword = releaseSecret("TITAN_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = releaseSecret("TITAN_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = releaseSecret("TITAN_RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
 
 val buildWebScripts by tasks.registering(Exec::class) {
     workingDir(repositoryRoot)
@@ -32,18 +49,33 @@ val syncAndroidWebScript by tasks.registering(Sync::class) {
 
 android {
     namespace = "com.titan.browser"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.titan.browser"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 7
-        versionName = "0.4.3"
+        targetSdk = 36
+        versionCode = 8
+        versionName = "0.4.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(requireNotNull(releaseStoreFile))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
         }
     }
 
@@ -55,7 +87,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -66,10 +98,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -83,7 +111,21 @@ android {
         }
     }
 
+    lint {
+        // Full debug and release lint are explicit CI gates. Avoid AGP's reduced
+        // lintVital task, which can race its migrated lint-registry cache on Windows.
+        checkReleaseBuilds = false
+        // AAPT still requires adaptive-icon XML in a v26-qualified directory.
+        disable += "ObsoleteSdkInt"
+    }
+
     sourceSets.getByName("main").assets.srcDir(generatedWebAssets)
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
 }
 
 tasks.named("preBuild").configure {

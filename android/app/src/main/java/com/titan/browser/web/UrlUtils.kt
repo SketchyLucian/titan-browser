@@ -1,6 +1,7 @@
 package com.titan.browser.web
 
 import android.util.Patterns
+import androidx.core.net.toUri
 import com.titan.browser.model.SearchEngine
 import java.net.URI
 
@@ -81,7 +82,7 @@ object UrlUtils {
     fun stripTrackingParameters(url: String): String {
         if (!url.contains("?")) return url
         return try {
-            val uri = android.net.Uri.parse(url)
+            val uri = url.toUri()
             val queryNames = uri.queryParameterNames
             if (queryNames.isEmpty()) return url
 
@@ -102,4 +103,3 @@ object UrlUtils {
         }
     }
 }
-

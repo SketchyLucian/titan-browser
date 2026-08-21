@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -161,7 +162,7 @@ fun TabCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Default.Language,
+                imageVector = if (tab.isPrivate) Icons.Default.Lock else Icons.Default.Language,
                 contentDescription = null,
                 tint = TitanPrimary,
                 modifier = Modifier.size(14.dp)

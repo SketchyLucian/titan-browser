@@ -14,5 +14,6 @@ data class Tab(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val isDesktopMode: Boolean = false,
+    val isPrivate: Boolean = false,
     val webView: WebView? = null
 )

@@ -367,6 +367,9 @@
 
     document.getElementById('updateCheckBtn')?.addEventListener('click', checkForUpdates);
     document.getElementById('updateOpenBtn')?.addEventListener('click', openUpdateDownload);
+    document.getElementById('defaultBrowserBtn')?.addEventListener('click', () => {
+      sendIpc({ type: 'OpenDefaultBrowserSettings' });
+    });
 
     const drToggle = document.getElementById('darkReaderToggle') as HTMLInputElement | null;
     if (drToggle) {

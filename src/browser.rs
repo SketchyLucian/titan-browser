@@ -1,14 +1,21 @@
-use crate::ipc::{Bookmark, BrowserModule, BrowserSettings, IpcIncoming, IpcTabInfo};
+use crate::ipc::{
+    Bookmark, BrowserModule, BrowserSession, BrowserSettings, DownloadRecord, HistoryEntry,
+    IpcIncoming, IpcTabInfo, SessionTab,
+};
 use crate::storage::StorageManager;
 use crate::updater::{UpdateCheckResult, UpdateInfo, UpdateState, UpdateStatus};
 use crate::url_utils::normalize_or_search_url_with_engine;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::thread;
 use tao::dpi::{LogicalPosition, LogicalSize};
 use tao::event_loop::EventLoopProxy;
 use tao::window::Window;
-use wry::{PageLoadEvent, Rect, WebView, WebViewBuilder};
+use wry::{
+    NewWindowResponse, PageLoadEvent, Rect, WebView, WebViewBuilder, WebViewBuilderExtWindows,
+    WebViewExtWindows,
+};
 
 pub const HEADER_HEIGHT_COLLAPSED: f64 = 76.0;
 pub const HEADER_HEIGHT_EXPANDED: f64 = 102.0;
@@ -26,13 +33,120 @@ fn desktop_command(command: serde_json::Value) -> String {
     )
 }
 
+fn prepare_download_destination(
+    url: &str,
+    destination: &mut std::path::PathBuf,
+) -> Option<std::path::PathBuf> {
+    if let Some(configured_dir) = std::env::var_os("TITAN_DOWNLOAD_DIR") {
+        let directory = std::path::PathBuf::from(configured_dir);
+        if let Err(error) = std::fs::create_dir_all(&directory) {
+            eprintln!(
+                "Could not create download directory {}: {error}",
+                directory.display()
+            );
+        } else {
+            let file_name = destination
+                .file_name()
+                .filter(|name| !name.is_empty())
+                .map(std::ffi::OsStr::to_os_string)
+                .or_else(|| {
+                    url::Url::parse(url)
+                        .ok()?
+                        .path_segments()?
+                        .next_back()
+                        .filter(|segment| !segment.is_empty())
+                        .map(std::ffi::OsString::from)
+                })
+                .unwrap_or_else(|| std::ffi::OsString::from("download"));
+            *destination = directory.join(file_name);
+        }
+    }
+
+    (!destination.as_os_str().is_empty()).then(|| destination.clone())
+}
+
+fn desktop_adblock_script(
+    manager: &crate::adblock_engine::AdblockEngineManager,
+    settings: &BrowserSettings,
+    target_url: &str,
+) -> String {
+    let (dynamic_selectors, dynamic_scriptlet) = manager.get_cosmetic_resources(target_url);
+    render_typescript(
+        include_str!("../web-scripts/dist/desktop-adblock.js"),
+        "__TITAN_DESKTOP_ADBLOCK_CONFIG__",
+        serde_json::json!({
+            "enabled": settings.adblock_enabled,
+            "blockVideoAds": settings.adblock_block_video_ads,
+            "cosmeticFiltering": settings.adblock_cosmetic_filtering,
+            "blockPopups": settings.adblock_block_popups,
+            "aggressiveMode": settings.adblock_aggressive_mode,
+            "whitelistedDomains": settings.adblock_whitelisted_domains,
+            "blockedDomains": settings.adblock_blocked_domains,
+            "dynamicSelectors": dynamic_selectors,
+            "scriptletCode": dynamic_scriptlet,
+        }),
+    )
+}
+
 #[derive(Debug)]
 pub enum UserEvent {
     Ipc(String),
     UpdateCheckFinished(UpdateCheckResult),
-    PageLoadStarted { tab_id: u32, url: String },
-    PageLoadFinished { tab_id: u32, url: String },
+    PageLoadStarted {
+        tab_id: u32,
+        url: String,
+    },
+    PageLoadFinished {
+        tab_id: u32,
+        url: String,
+    },
+    OpenPopup {
+        url: String,
+    },
+    DownloadStarted {
+        url: String,
+        path: Option<std::path::PathBuf>,
+    },
+    DownloadCompleted {
+        url: String,
+        path: Option<std::path::PathBuf>,
+        success: bool,
+    },
+    AdoptPopup {
+        tab_id: u32,
+    },
     Exit,
+}
+
+fn popup_target_url(requested_url: &str) -> Option<String> {
+    let requested_url = requested_url.trim();
+    if requested_url.is_empty() || requested_url.eq_ignore_ascii_case("about:blank") {
+        return Some("titan://newtab".into());
+    }
+
+    let parsed = url::Url::parse(requested_url).ok()?;
+    matches!(parsed.scheme(), "http" | "https").then(|| parsed.into())
+}
+
+fn is_allowed_content_ipc(message: &str, own_tab_id: u32) -> bool {
+    let Ok(message) = serde_json::from_str::<IpcIncoming>(message) else {
+        return false;
+    };
+    match message {
+        IpcIncoming::NewTab { url } => url.as_deref().is_none_or(BrowserManager::is_newtab_url),
+        IpcIncoming::CloseTab { tab_id } => tab_id == own_tab_id,
+        IpcIncoming::GoBack
+        | IpcIncoming::GoForward
+        | IpcIncoming::Reload
+        | IpcIncoming::FocusAddressBar
+        | IpcIncoming::OpenSettings
+        | IpcIncoming::OpenHistory
+        | IpcIncoming::OpenDownloads => true,
+        IpcIncoming::NewPrivateTab => true,
+        IpcIncoming::TabStateUpdate { tab_id, .. } => tab_id == Some(own_tab_id),
+        IpcIncoming::ReportBlockedRequest { .. } | IpcIncoming::ReportBlockedAd { .. } => true,
+        _ => false,
+    }
 }
 
 pub struct Tab {
@@ -42,6 +156,7 @@ pub struct Tab {
     pub is_loading: bool,
     pub can_go_back: bool,
     pub can_go_forward: bool,
+    pub is_private: bool,
     pub webview: WebView,
 }
 
@@ -53,7 +168,7 @@ pub struct BrowserManager {
     pub prewarmed_settings_tab: Option<Tab>,
     pub tabs: Vec<Tab>,
     pub active_tab_id: Option<u32>,
-    pub next_tab_id: u32,
+    pub next_tab_id: Rc<Cell<u32>>,
     pub bookmarks: Vec<Bookmark>,
     pub modules: Vec<BrowserModule>,
     pub settings: BrowserSettings,
@@ -65,6 +180,11 @@ pub struct BrowserManager {
     #[cfg(target_os = "windows")]
     pub desktop_adblock_settings: crate::desktop_adblock::SharedDesktopAdblockSettings,
     pub update_state: UpdateState,
+    pub history: Vec<HistoryEntry>,
+    pub downloads: Vec<DownloadRecord>,
+    next_download_id: u64,
+    pending_popup_tabs: Rc<RefCell<Vec<Tab>>>,
+    is_restoring_session: bool,
 }
 
 impl BrowserManager {
@@ -73,6 +193,20 @@ impl BrowserManager {
         let bookmarks = storage.load_bookmarks();
         let modules = storage.load_modules();
         let settings = storage.load_settings();
+        let history = storage.load_history();
+        let mut downloads = storage.load_downloads();
+        for download in &mut downloads {
+            if download.status == "downloading" {
+                download.status = "interrupted".into();
+            }
+        }
+        let next_download_id = downloads
+            .iter()
+            .map(|download| download.id)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
+        storage.save_downloads(&downloads);
         let win_size = window.inner_size().to_logical::<f64>(window.scale_factor());
 
         let adblock_manager = Rc::new(crate::adblock_engine::AdblockEngineManager::new());
@@ -103,7 +237,7 @@ impl BrowserManager {
             prewarmed_settings_tab: None,
             tabs: Vec::new(),
             active_tab_id: None,
-            next_tab_id: 1,
+            next_tab_id: Rc::new(Cell::new(1)),
             bookmarks,
             modules,
             settings,
@@ -115,6 +249,11 @@ impl BrowserManager {
             #[cfg(target_os = "windows")]
             desktop_adblock_settings,
             update_state: UpdateState::default(),
+            history,
+            downloads,
+            next_download_id,
+            pending_popup_tabs: Rc::new(RefCell::new(Vec::new())),
+            is_restoring_session: false,
         }
     }
 
@@ -126,7 +265,7 @@ impl BrowserManager {
         }
     }
 
-    pub fn init(&mut self) {
+    pub fn init(&mut self, initial_url: Option<&str>) {
         let (r, g, b, a) = self.get_theme_background_color();
         #[cfg(target_os = "windows")]
         crate::drag_util::apply_dark_window_attributes(&self.window, (r, g, b));
@@ -156,8 +295,10 @@ impl BrowserManager {
 
         self.header_webview = Some(header);
 
-        // Open default initial tab (Titan New Tab)
-        self.create_tab("titan://newtab");
+        self.restore_session();
+        if let Some(url) = initial_url.and_then(popup_target_url) {
+            self.open_external_url(&url);
+        }
         self.prewarm_settings_tab();
 
         if self.settings.auto_update_enabled {
@@ -237,6 +378,48 @@ impl BrowserManager {
         )
     }
 
+    pub fn get_history_html(&self) -> String {
+        let html = include_str!("../ui/history.html");
+        let js = include_str!("../ui/dist/history.js");
+        let theme_class = format!("theme-{}", self.settings.theme);
+        let html_themed = html.replace(
+            "class=\"theme-titan-dark\"",
+            &format!("class=\"{}\"", theme_class),
+        );
+        let state_json = serde_json::to_string(&self.history)
+            .unwrap_or_else(|_| "[]".into())
+            .replace('<', "\\u003c");
+
+        html_themed.replace(
+            "<script src=\"history.js\"></script>",
+            &format!(
+                "<script id=\"titan-history-state\" type=\"application/json\">{}</script><script>{}</script>",
+                state_json, js
+            ),
+        )
+    }
+
+    pub fn get_downloads_html(&self) -> String {
+        let html = include_str!("../ui/downloads.html");
+        let js = include_str!("../ui/dist/downloads.js");
+        let theme_class = format!("theme-{}", self.settings.theme);
+        let html_themed = html.replace(
+            "class=\"theme-titan-dark\"",
+            &format!("class=\"{}\"", theme_class),
+        );
+        let state_json = serde_json::to_string(&self.downloads)
+            .unwrap_or_else(|_| "[]".into())
+            .replace('<', "\\u003c");
+
+        html_themed.replace(
+            "<script src=\"downloads.js\"></script>",
+            &format!(
+                "<script id=\"titan-downloads-state\" type=\"application/json\">{}</script><script>{}</script>",
+                state_json, js
+            ),
+        )
+    }
+
     pub fn is_newtab_url(url: &str) -> bool {
         url == "titan://newtab"
             || url == "about:newtab"
@@ -260,8 +443,18 @@ impl BrowserManager {
             || url == "about:shields"
     }
 
+    pub fn is_history_url(url: &str) -> bool {
+        url == "titan://history" || url == "about:history"
+    }
+
+    pub fn is_downloads_url(url: &str) -> bool {
+        url == "titan://downloads" || url == "about:downloads"
+    }
+
     pub fn is_internal_url(url: &str) -> bool {
         Self::is_settings_url(url)
+            || Self::is_history_url(url)
+            || Self::is_downloads_url(url)
             || Self::is_newtab_url(url)
             || url.starts_with("titan://")
             || url.starts_with("about:")
@@ -336,24 +529,7 @@ impl BrowserManager {
     }
 
     pub fn get_adblock_injection_script(&self, target_url: &str) -> String {
-        let (dynamic_selectors, dynamic_scriptlet) =
-            self.adblock_manager.get_cosmetic_resources(target_url);
-
-        render_typescript(
-            include_str!("../web-scripts/dist/desktop-adblock.js"),
-            "__TITAN_DESKTOP_ADBLOCK_CONFIG__",
-            serde_json::json!({
-                "enabled": self.settings.adblock_enabled,
-                "blockVideoAds": self.settings.adblock_block_video_ads,
-                "cosmeticFiltering": self.settings.adblock_cosmetic_filtering,
-                "blockPopups": self.settings.adblock_block_popups,
-                "aggressiveMode": self.settings.adblock_aggressive_mode,
-                "whitelistedDomains": self.settings.adblock_whitelisted_domains,
-                "blockedDomains": self.settings.adblock_blocked_domains,
-                "dynamicSelectors": dynamic_selectors,
-                "scriptletCode": dynamic_scriptlet,
-            }),
-        )
+        desktop_adblock_script(&self.adblock_manager, &self.settings, target_url)
     }
 
     pub fn get_adblock_dynamic_evaluation_script(&self, url: &str) -> String {
@@ -399,11 +575,17 @@ impl BrowserManager {
     }
 
     fn build_tab(&mut self, target_url: &str) -> Tab {
-        let tab_id = self.next_tab_id;
-        self.next_tab_id += 1;
+        self.build_tab_with_mode(target_url, false)
+    }
+
+    fn build_tab_with_mode(&mut self, target_url: &str, is_private: bool) -> Tab {
+        let tab_id = self.next_tab_id.get();
+        self.next_tab_id.set(tab_id.saturating_add(1));
 
         let is_newtab = Self::is_newtab_url(target_url);
         let is_settings = Self::is_settings_url(target_url);
+        let is_history = Self::is_history_url(target_url);
+        let is_downloads = Self::is_downloads_url(target_url);
         let is_themes = target_url == "titan://themes" || target_url == "about:themes";
         let is_privacy = target_url == "titan://privacy" || target_url == "about:privacy";
         let is_adblock = target_url == "titan://adblock"
@@ -415,6 +597,10 @@ impl BrowserManager {
             "titan://newtab".to_string()
         } else if is_settings {
             "titan://settings".to_string()
+        } else if is_history {
+            "titan://history".to_string()
+        } else if is_downloads {
+            "titan://downloads".to_string()
         } else {
             let clean_url = if self.settings.strip_tracking_parameters {
                 crate::url_utils::strip_tracking_parameters(target_url)
@@ -426,11 +612,22 @@ impl BrowserManager {
 
         let proxy_ipc = self.proxy.clone();
         let proxy_load = self.proxy.clone();
+        let proxy_download_started = self.proxy.clone();
+        let proxy_download_completed = self.proxy.clone();
         let tab_id_copy = tab_id;
-        let is_internal = is_newtab || is_settings;
+        let is_internal = is_newtab || is_settings || is_history || is_downloads;
         let theme_script = self.get_theme_injection_script();
         let privacy_script = self.get_privacy_injection_script();
         let adblock_script = self.get_adblock_injection_script(&normalized_url);
+        let popup_theme_script = theme_script.clone();
+        let popup_privacy_script = privacy_script.clone();
+        let popup_settings = self.settings.clone();
+        let popup_adblock_manager = self.adblock_manager.clone();
+        let popup_native_adblock_settings = self.desktop_adblock_settings.clone();
+        let popup_tabs = self.pending_popup_tabs.clone();
+        let popup_next_tab_id = self.next_tab_id.clone();
+        let popup_window = self.window.clone();
+        let popup_proxy = self.proxy.clone();
 
         let tab_state_script = render_typescript(
             include_str!("../web-scripts/dist/desktop-tab-state.js"),
@@ -450,6 +647,7 @@ impl BrowserManager {
 
         // Tab activation owns focus; a hidden tab must not request it at creation.
         let builder = WebViewBuilder::new()
+            .with_incognito(is_private)
             .with_bounds(content_bounds)
             .with_background_color(bg_color)
             .with_transparent(false)
@@ -457,7 +655,138 @@ impl BrowserManager {
             .with_focused(false)
             .with_initialization_script(&init_script)
             .with_ipc_handler(move |req| {
-                let _ = proxy_ipc.send_event(UserEvent::Ipc(req.body().clone()));
+                let message = req.body();
+                if is_internal || is_allowed_content_ipc(message, tab_id_copy) {
+                    let _ = proxy_ipc.send_event(UserEvent::Ipc(message.clone()));
+                }
+            })
+            .with_new_window_req_handler(move |url, features| {
+                let requested_url = url.trim();
+                if !requested_url.is_empty()
+                    && !requested_url.eq_ignore_ascii_case("about:blank")
+                    && popup_target_url(requested_url).is_none()
+                {
+                    return NewWindowResponse::Deny;
+                }
+
+                let popup_tab_id = popup_next_tab_id.get();
+                popup_next_tab_id.set(popup_tab_id.saturating_add(1));
+                let popup_url = if requested_url.is_empty() {
+                    "about:blank".to_string()
+                } else {
+                    requested_url.to_string()
+                };
+                let popup_tab_state_script = render_typescript(
+                    include_str!("../web-scripts/dist/desktop-tab-state.js"),
+                    "__TITAN_DESKTOP_TAB_STATE_CONFIG__",
+                    serde_json::json!({ "tabId": popup_tab_id }),
+                );
+                let popup_adblock_script =
+                    desktop_adblock_script(&popup_adblock_manager, &popup_settings, &popup_url);
+                let popup_init_script = [
+                    popup_tab_state_script,
+                    popup_theme_script.clone(),
+                    popup_privacy_script.clone(),
+                    popup_adblock_script,
+                ]
+                .join("\n");
+
+                let ipc_proxy = popup_proxy.clone();
+                let load_proxy = popup_proxy.clone();
+                let nested_popup_proxy = popup_proxy.clone();
+                let download_started_proxy = popup_proxy.clone();
+                let download_completed_proxy = popup_proxy.clone();
+                let popup_webview =
+                    WebViewBuilder::new()
+                        .with_incognito(is_private)
+                        .with_environment(features.opener.environment)
+                        .with_bounds(content_bounds)
+                        .with_background_color(bg_color)
+                        .with_transparent(false)
+                        .with_visible(false)
+                        .with_focused(false)
+                        .with_initialization_script(&popup_init_script)
+                        .with_ipc_handler(move |request| {
+                            let message = request.body();
+                            if is_allowed_content_ipc(message, popup_tab_id) {
+                                let _ = ipc_proxy.send_event(UserEvent::Ipc(message.clone()));
+                            }
+                        })
+                        .with_new_window_req_handler(move |nested_url, _| {
+                            let _ = nested_popup_proxy
+                                .send_event(UserEvent::OpenPopup { url: nested_url });
+                            NewWindowResponse::Deny
+                        })
+                        .with_download_started_handler(move |url, path| {
+                            let path = prepare_download_destination(&url, path);
+                            let _ = download_started_proxy
+                                .send_event(UserEvent::DownloadStarted { url, path });
+                            true
+                        })
+                        .with_download_completed_handler(move |url, path, success| {
+                            let _ = download_completed_proxy
+                                .send_event(UserEvent::DownloadCompleted { url, path, success });
+                        })
+                        .with_on_page_load_handler(move |event, url| match event {
+                            PageLoadEvent::Started => {
+                                let _ = load_proxy.send_event(UserEvent::PageLoadStarted {
+                                    tab_id: popup_tab_id,
+                                    url: url.to_string(),
+                                });
+                            }
+                            PageLoadEvent::Finished => {
+                                let _ = load_proxy.send_event(UserEvent::PageLoadFinished {
+                                    tab_id: popup_tab_id,
+                                    url: url.to_string(),
+                                });
+                            }
+                        })
+                        .build_as_child(&*popup_window);
+
+                let popup_webview = match popup_webview {
+                    Ok(webview) => webview,
+                    Err(error) => {
+                        eprintln!("Could not create popup WebView: {error}");
+                        return NewWindowResponse::Deny;
+                    }
+                };
+                if let Err(error) = crate::desktop_adblock::attach_request_blocker(
+                    &popup_webview,
+                    popup_adblock_manager.clone(),
+                    popup_native_adblock_settings.clone(),
+                    popup_proxy.clone(),
+                ) {
+                    eprintln!("Could not attach popup request blocker: {error}");
+                }
+                let core_webview = popup_webview.webview();
+                popup_tabs.borrow_mut().push(Tab {
+                    id: popup_tab_id,
+                    url: popup_url,
+                    title: "Popup".into(),
+                    is_loading: true,
+                    can_go_back: false,
+                    can_go_forward: false,
+                    is_private,
+                    webview: popup_webview,
+                });
+                let _ = popup_proxy.send_event(UserEvent::AdoptPopup {
+                    tab_id: popup_tab_id,
+                });
+                NewWindowResponse::Create {
+                    webview: core_webview,
+                }
+            })
+            .with_download_started_handler(move |url, path| {
+                let path = prepare_download_destination(&url, path);
+                let _ = proxy_download_started.send_event(UserEvent::DownloadStarted { url, path });
+                true
+            })
+            .with_download_completed_handler(move |url, path, success| {
+                let _ = proxy_download_completed.send_event(UserEvent::DownloadCompleted {
+                    url,
+                    path,
+                    success,
+                });
             })
             .with_on_page_load_handler(move |event, url| match event {
                 PageLoadEvent::Started => {
@@ -487,6 +816,10 @@ impl BrowserManager {
                 "general"
             };
             Some(self.get_settings_html(section))
+        } else if is_history {
+            Some(self.get_history_html())
+        } else if is_downloads {
+            Some(self.get_downloads_html())
         } else {
             None
         };
@@ -519,6 +852,10 @@ impl BrowserManager {
 
         let default_title = if is_newtab {
             "New Tab".to_string()
+        } else if is_history {
+            "History".to_string()
+        } else if is_downloads {
+            "Downloads".to_string()
         } else if is_themes {
             "Themes".to_string()
         } else if is_privacy {
@@ -540,6 +877,7 @@ impl BrowserManager {
             is_loading: !is_internal,
             can_go_back: false,
             can_go_forward: false,
+            is_private,
             webview,
         }
     }
@@ -558,7 +896,266 @@ impl BrowserManager {
         let tab_id = new_tab.id;
         self.tabs.push(new_tab);
         self.switch_tab(tab_id);
+        self.save_session();
         tab_id
+    }
+
+    pub fn create_private_tab(&mut self) -> u32 {
+        let new_tab = self.build_tab_with_mode("titan://newtab", true);
+        let tab_id = new_tab.id;
+        self.tabs.push(new_tab);
+        self.switch_tab(tab_id);
+        tab_id
+    }
+
+    fn restore_session(&mut self) {
+        let session = self.storage.load_session();
+        self.is_restoring_session = true;
+        let targets: Vec<String> = session
+            .tabs
+            .iter()
+            .take(25)
+            .filter_map(|tab| Self::restorable_url(&tab.url))
+            .collect();
+
+        for target in &targets {
+            self.create_tab(target);
+        }
+        if self.tabs.is_empty() {
+            self.create_tab("titan://newtab");
+        } else {
+            let active_index = session.active_index.min(self.tabs.len() - 1);
+            let active_id = self.tabs[active_index].id;
+            self.switch_tab(active_id);
+        }
+        self.is_restoring_session = false;
+        self.save_session();
+    }
+
+    fn restorable_url(url: &str) -> Option<String> {
+        if Self::is_internal_url(url) {
+            return Some(if Self::is_newtab_url(url) {
+                "titan://newtab".into()
+            } else if Self::is_history_url(url) {
+                "titan://history".into()
+            } else if Self::is_downloads_url(url) {
+                "titan://downloads".into()
+            } else {
+                "titan://settings".into()
+            });
+        }
+        popup_target_url(url)
+    }
+
+    fn save_session(&self) {
+        if self.is_restoring_session {
+            return;
+        }
+        let regular_tabs: Vec<&Tab> = self.tabs.iter().filter(|tab| !tab.is_private).collect();
+        let active_index = self
+            .active_tab_id
+            .and_then(|id| regular_tabs.iter().position(|tab| tab.id == id))
+            .unwrap_or(0);
+        let session = BrowserSession {
+            tabs: regular_tabs
+                .iter()
+                .map(|tab| SessionTab {
+                    url: tab.url.clone(),
+                    title: tab.title.clone(),
+                })
+                .collect(),
+            active_index,
+        };
+        self.storage.save_session(&session);
+    }
+
+    fn record_history(&mut self, title: &str, url: &str) {
+        if Self::is_internal_url(url) || popup_target_url(url).is_none() {
+            return;
+        }
+        let previous = self
+            .history
+            .iter()
+            .position(|entry| entry.url == url)
+            .map(|index| self.history.remove(index));
+        let visit_count = previous
+            .map(|entry| entry.visit_count.saturating_add(1))
+            .unwrap_or(1);
+        let last_visited_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0);
+        self.history.insert(
+            0,
+            HistoryEntry {
+                title: if title.trim().is_empty() { url } else { title }.into(),
+                url: url.into(),
+                last_visited_ms,
+                visit_count,
+            },
+        );
+        self.history.truncate(2_000);
+        self.storage.save_history(&self.history);
+    }
+
+    fn open_history(&mut self) {
+        if let Some(tab_id) = self
+            .tabs
+            .iter()
+            .find(|tab| Self::is_history_url(&tab.url))
+            .map(|tab| tab.id)
+        {
+            let html = self.get_history_html();
+            if let Some(tab) = self.tabs.iter().find(|tab| tab.id == tab_id) {
+                let _ = tab.webview.load_html(&html);
+            }
+            self.switch_tab(tab_id);
+        } else {
+            self.create_tab("titan://history");
+        }
+    }
+
+    fn clear_history(&mut self) {
+        self.history.clear();
+        self.storage.save_history(&self.history);
+        let html = self.get_history_html();
+        for tab in &self.tabs {
+            if Self::is_history_url(&tab.url) {
+                let _ = tab.webview.load_html(&html);
+            }
+        }
+    }
+
+    fn open_downloads(&mut self) {
+        if let Some(tab_id) = self
+            .tabs
+            .iter()
+            .find(|tab| Self::is_downloads_url(&tab.url))
+            .map(|tab| tab.id)
+        {
+            self.refresh_download_pages();
+            self.switch_tab(tab_id);
+        } else {
+            self.create_tab("titan://downloads");
+        }
+    }
+
+    fn refresh_download_pages(&self) {
+        let html = self.get_downloads_html();
+        for tab in &self.tabs {
+            if Self::is_downloads_url(&tab.url) {
+                let _ = tab.webview.load_html(&html);
+            }
+        }
+    }
+
+    pub fn on_download_started(&mut self, url: String, path: Option<std::path::PathBuf>) {
+        let started_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0);
+        let record = DownloadRecord {
+            id: self.next_download_id,
+            url,
+            file_path: path.map(|path| path.to_string_lossy().into_owned()),
+            status: "downloading".into(),
+            started_ms,
+        };
+        self.next_download_id = self.next_download_id.saturating_add(1);
+        self.downloads.insert(0, record);
+        self.downloads.truncate(500);
+        self.storage.save_downloads(&self.downloads);
+        self.refresh_download_pages();
+    }
+
+    pub fn on_download_completed(
+        &mut self,
+        url: String,
+        path: Option<std::path::PathBuf>,
+        success: bool,
+    ) {
+        if let Some(download) = self
+            .downloads
+            .iter_mut()
+            .find(|download| download.url == url && download.status == "downloading")
+        {
+            if let Some(path) = path {
+                download.file_path = Some(path.to_string_lossy().into_owned());
+            }
+            download.status = if success { "complete" } else { "failed" }.into();
+        }
+        self.storage.save_downloads(&self.downloads);
+        self.refresh_download_pages();
+    }
+
+    fn clear_downloads(&mut self) {
+        self.downloads.clear();
+        self.storage.save_downloads(&self.downloads);
+        self.refresh_download_pages();
+    }
+
+    fn open_download(&self, download_id: u64) {
+        let Some(path) = self
+            .downloads
+            .iter()
+            .find(|download| download.id == download_id && download.status == "complete")
+            .and_then(|download| download.file_path.as_deref())
+        else {
+            return;
+        };
+        let path = std::path::Path::new(path);
+        if !path.is_file() {
+            return;
+        }
+
+        #[cfg(target_os = "windows")]
+        if !crate::menu_util::open_file(path) {
+            eprintln!("Could not open downloaded file {}", path.display());
+        }
+    }
+
+    pub fn open_popup(&mut self, requested_url: &str) {
+        if let Some(target_url) = popup_target_url(requested_url) {
+            self.create_tab(&target_url);
+        }
+    }
+
+    pub fn adopt_popup(&mut self, tab_id: u32) {
+        let pending = {
+            let mut popup_tabs = self.pending_popup_tabs.borrow_mut();
+            popup_tabs
+                .iter()
+                .position(|tab| tab.id == tab_id)
+                .map(|index| popup_tabs.remove(index))
+        };
+        if let Some(tab) = pending {
+            self.tabs.push(tab);
+            self.switch_tab(tab_id);
+            self.save_session();
+        }
+    }
+
+    pub fn open_external_url(&mut self, requested_url: &str) {
+        let Some(target_url) = popup_target_url(requested_url) else {
+            return;
+        };
+        let active_is_newtab = self
+            .active_tab_id
+            .and_then(|id| self.tabs.iter().find(|tab| tab.id == id))
+            .is_some_and(|tab| Self::is_newtab_url(&tab.url));
+        if active_is_newtab {
+            self.navigate_active_tab(&target_url);
+        } else {
+            self.create_tab(&target_url);
+        }
+    }
+
+    fn focus_address_bar(&self) {
+        let script = desktop_command(serde_json::json!({ "type": "focusAddressBar" }));
+        if let Some(header) = &self.header_webview {
+            let _ = header.focus();
+            let _ = header.evaluate_script(&script);
+        }
     }
 
     fn prewarm_settings_tab(&mut self) {
@@ -640,6 +1237,7 @@ impl BrowserManager {
         if let Some(active_tab) = self.tabs.iter_mut().find(|t| t.id == target_id) {
             let _ = active_tab.webview.focus();
         }
+        self.save_session();
     }
 
     pub fn close_tab(&mut self, target_id: u32) {
@@ -668,6 +1266,7 @@ impl BrowserManager {
             } else {
                 self.sync_full_state();
             }
+            self.save_session();
         }
     }
 
@@ -685,6 +1284,7 @@ impl BrowserManager {
                 if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
                     let _ = tab.webview.focus();
                 }
+                self.save_session();
             }
             return;
         }
@@ -725,7 +1325,18 @@ impl BrowserManager {
                 if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
                     let _ = tab.webview.focus();
                 }
+                self.save_session();
             }
+            return;
+        }
+
+        if Self::is_history_url(input) {
+            self.open_history();
+            return;
+        }
+
+        if Self::is_downloads_url(input) {
+            self.open_downloads();
             return;
         }
 
@@ -747,6 +1358,7 @@ impl BrowserManager {
             if let Some(tab) = self.tabs.iter().find(|t| t.id == active_id) {
                 let _ = tab.webview.focus();
             }
+            self.save_session();
         }
     }
 
@@ -1000,6 +1612,7 @@ impl BrowserManager {
         }
 
         self.sync_tab_update(tab_id);
+        self.save_session();
 
         if self.active_tab_id == Some(tab_id) {
             if let Some(tab) = self.tabs.iter().find(|t| t.id == tab_id) {
@@ -1018,21 +1631,43 @@ impl BrowserManager {
     ) {
         let target_id = tab_id.or(self.active_tab_id);
         if let Some(id) = target_id {
+            let mut history_record = None;
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) {
-                if !url.is_empty() && url != "about:blank" {
+                let actual_url = tab
+                    .webview
+                    .url()
+                    .ok()
+                    .filter(|actual_url| !actual_url.is_empty() && actual_url != "about:blank");
+                if let Some(actual_url) = actual_url {
+                    tab.url = actual_url;
+                } else if Self::is_internal_url(&tab.url) && !url.is_empty() && url != "about:blank"
+                {
                     tab.url = url;
                 }
                 if !title.is_empty() {
                     tab.title = title;
                 }
-                if let Some(back) = can_go_back {
-                    tab.can_go_back = back;
-                }
-                if let Some(forward) = can_go_forward {
-                    tab.can_go_forward = forward;
+                tab.can_go_back = tab
+                    .webview
+                    .can_go_back()
+                    .ok()
+                    .or(can_go_back)
+                    .unwrap_or(false);
+                tab.can_go_forward = tab
+                    .webview
+                    .can_go_forward()
+                    .ok()
+                    .or(can_go_forward)
+                    .unwrap_or(false);
+                if !tab.is_private {
+                    history_record = Some((tab.title.clone(), tab.url.clone()));
                 }
             }
+            if let Some((history_title, history_url)) = history_record {
+                self.record_history(&history_title, &history_url);
+            }
             self.sync_tab_update(id);
+            self.save_session();
         }
     }
 
@@ -1077,6 +1712,9 @@ impl BrowserManager {
                     let default_url = url.unwrap_or_else(|| "titan://newtab".into());
                     self.create_tab(&default_url);
                 }
+                IpcIncoming::NewPrivateTab => {
+                    self.create_private_tab();
+                }
                 IpcIncoming::CloseTab { tab_id } => {
                     self.close_tab(tab_id);
                 }
@@ -1097,6 +1735,9 @@ impl BrowserManager {
                 }
                 IpcIncoming::GoHome => {
                     self.go_home();
+                }
+                IpcIncoming::FocusAddressBar => {
+                    self.focus_address_bar();
                 }
                 IpcIncoming::SetZoom { zoom } => {
                     self.set_zoom(zoom);
@@ -1392,15 +2033,35 @@ impl BrowserManager {
                     cache,
                     local_storage,
                 } => {
-                    let script = desktop_command(serde_json::json!({
-                        "type": "clearBrowsingData",
-                        "cookies": cookies,
-                        "cache": cache,
-                        "localStorage": local_storage,
-                    }));
-                    for tab in &self.tabs {
-                        if !Self::is_internal_url(&tab.url) {
-                            let _ = tab.webview.evaluate_script(&script);
+                    #[cfg(target_os = "windows")]
+                    if let Some(profile_view) = self.header_webview.as_ref().or_else(|| {
+                        self.tabs
+                            .iter()
+                            .find(|tab| !tab.is_private)
+                            .map(|tab| &tab.webview)
+                    }) {
+                        if let Err(error) = crate::desktop_data::clear_browsing_data(
+                            profile_view,
+                            cookies,
+                            cache,
+                            local_storage,
+                        ) {
+                            eprintln!("Could not clear WebView2 browsing data: {error}");
+                        }
+                    }
+
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        let script = desktop_command(serde_json::json!({
+                            "type": "clearBrowsingData",
+                            "cookies": cookies,
+                            "cache": cache,
+                            "localStorage": local_storage,
+                        }));
+                        for tab in &self.tabs {
+                            if !Self::is_internal_url(&tab.url) {
+                                let _ = tab.webview.evaluate_script(&script);
+                            }
                         }
                     }
                 }
@@ -1408,6 +2069,18 @@ impl BrowserManager {
                 IpcIncoming::OpenPrivacy => self.open_settings_view("privacy"),
                 IpcIncoming::OpenAdblock => self.open_settings_view("adblock"),
                 IpcIncoming::OpenSettings => self.open_settings_view("general"),
+                IpcIncoming::OpenHistory => self.open_history(),
+                IpcIncoming::ClearHistory => self.clear_history(),
+                IpcIncoming::OpenDownloads => self.open_downloads(),
+                IpcIncoming::ClearDownloads => self.clear_downloads(),
+                IpcIncoming::OpenDownload { download_id } => self.open_download(download_id),
+                IpcIncoming::OpenDefaultBrowserSettings =>
+                {
+                    #[cfg(target_os = "windows")]
+                    if !crate::menu_util::open_default_browser_settings() {
+                        eprintln!("Could not open Windows Default Apps settings");
+                    }
+                }
                 IpcIncoming::ShowBookmarkContextMenu { url } => {
                     #[cfg(target_os = "windows")]
                     if let Some(cmd) =
@@ -1470,6 +2143,7 @@ impl BrowserManager {
                         is_loading: t.is_loading,
                         can_go_back: t.can_go_back,
                         can_go_forward: t.can_go_forward,
+                        is_private: t.is_private,
                     })
                     .collect::<Vec<_>>(),
                 "active_tab_id": self.active_tab_id,
@@ -1496,6 +2170,7 @@ impl BrowserManager {
                     is_loading: tab.is_loading,
                     can_go_back: tab.can_go_back,
                     can_go_forward: tab.can_go_forward,
+                    is_private: tab.is_private,
                 };
                 let script = desktop_command(serde_json::json!({
                     "type": "tabUpdate",
@@ -1504,5 +2179,68 @@ impl BrowserManager {
                 let _ = header.evaluate_script(&script);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_allowed_content_ipc, popup_target_url};
+
+    #[test]
+    fn popup_target_accepts_web_urls() {
+        assert_eq!(
+            popup_target_url("https://accounts.example.test/login"),
+            Some("https://accounts.example.test/login".into())
+        );
+        assert_eq!(
+            popup_target_url("http://example.test/payment"),
+            Some("http://example.test/payment".into())
+        );
+    }
+
+    #[test]
+    fn popup_target_maps_blank_windows_to_a_safe_tab() {
+        assert_eq!(popup_target_url(""), Some("titan://newtab".into()));
+        assert_eq!(
+            popup_target_url("about:blank"),
+            Some("titan://newtab".into())
+        );
+    }
+
+    #[test]
+    fn popup_target_rejects_privileged_and_script_urls() {
+        for url in [
+            "javascript:alert(document.cookie)",
+            "data:text/html,unsafe",
+            "file:///C:/Windows/System32/drivers/etc/hosts",
+            "not a url",
+        ] {
+            assert_eq!(popup_target_url(url), None, "unexpectedly accepted {url}");
+        }
+    }
+
+    #[test]
+    fn untrusted_pages_can_only_send_scoped_browser_commands() {
+        assert!(is_allowed_content_ipc(
+            r#"{"type":"CloseTab","tab_id":7}"#,
+            7
+        ));
+        assert!(is_allowed_content_ipc(
+            r#"{"type":"NewTab","url":"titan://newtab"}"#,
+            7
+        ));
+        assert!(!is_allowed_content_ipc(
+            r#"{"type":"CloseTab","tab_id":8}"#,
+            7
+        ));
+        assert!(!is_allowed_content_ipc(
+            r#"{"type":"NewTab","url":"https://attacker.test"}"#,
+            7
+        ));
+        assert!(!is_allowed_content_ipc(
+            r#"{"type":"ClearBrowsingData","cookies":true,"cache":true,"local_storage":true}"#,
+            7
+        ));
+        assert!(!is_allowed_content_ipc(r#"{"type":"CloseWindow"}"#, 7));
     }
 }

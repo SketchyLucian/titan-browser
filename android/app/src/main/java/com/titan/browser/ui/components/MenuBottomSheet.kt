@@ -22,9 +22,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.DesktopWindows
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FindInPage
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -74,7 +78,11 @@ fun MenuBottomSheet(
     onToggleBookmark: () -> Unit,
     onReload: () -> Unit,
     onNewTab: () -> Unit,
+    onNewPrivateTab: () -> Unit,
     onOpenBookmarks: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onOpenDownloads: () -> Unit,
+    onOpenDefaultBrowserSettings: () -> Unit,
     onFindInPage: () -> Unit,
     onToggleDesktopMode: () -> Unit,
     onShare: () -> Unit,
@@ -135,7 +143,11 @@ fun MenuBottomSheet(
                 onToggleBookmark = onToggleBookmark,
                 onReload = onReload,
                 onNewTab = onNewTab,
+                onNewPrivateTab = onNewPrivateTab,
                 onOpenBookmarks = onOpenBookmarks,
+                onOpenHistory = onOpenHistory,
+                onOpenDownloads = onOpenDownloads,
+                onOpenDefaultBrowserSettings = onOpenDefaultBrowserSettings,
                 onFindInPage = onFindInPage,
                 onToggleDesktopMode = onToggleDesktopMode,
                 onShare = onShare,
@@ -158,7 +170,11 @@ private fun MenuContent(
     onToggleBookmark: () -> Unit,
     onReload: () -> Unit,
     onNewTab: () -> Unit,
+    onNewPrivateTab: () -> Unit,
     onOpenBookmarks: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onOpenDownloads: () -> Unit,
+    onOpenDefaultBrowserSettings: () -> Unit,
     onFindInPage: () -> Unit,
     onToggleDesktopMode: () -> Unit,
     onShare: () -> Unit,
@@ -276,6 +292,33 @@ private fun MenuContent(
             )
 
             MenuItem(
+                icon = Icons.Default.Lock,
+                title = "New private tab",
+                onClick = {
+                    onNewPrivateTab()
+                    onDismiss()
+                }
+            )
+
+            MenuItem(
+                icon = Icons.Default.History,
+                title = "History",
+                onClick = {
+                    onOpenHistory()
+                    onDismiss()
+                }
+            )
+
+            MenuItem(
+                icon = Icons.Default.Download,
+                title = "Downloads",
+                onClick = {
+                    onOpenDownloads()
+                    onDismiss()
+                }
+            )
+
+            MenuItem(
                 icon = Icons.Default.FindInPage,
                 title = "Find in page",
                 onClick = {
@@ -343,6 +386,15 @@ private fun MenuContent(
                 title = "Settings",
                 onClick = {
                     onOpenSettings()
+                    onDismiss()
+                }
+            )
+
+            MenuItem(
+                icon = Icons.Default.Public,
+                title = "Set as default browser",
+                onClick = {
+                    onOpenDefaultBrowserSettings()
                     onDismiss()
                 }
             )

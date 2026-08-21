@@ -44,6 +44,9 @@
   const winMaxBtn = document.getElementById('winMaxBtn') as HTMLElement;
   const winCloseBtn = document.getElementById('winCloseBtn') as HTMLElement;
   const settingsBtn = document.getElementById('settingsBtn') as HTMLElement;
+  const historyBtn = document.getElementById('historyBtn') as HTMLElement;
+  const downloadsBtn = document.getElementById('downloadsBtn') as HTMLElement;
+  const privateTabBtn = document.getElementById('privateTabBtn') as HTMLElement;
   const brandLogo = document.getElementById('brandLogo') as HTMLElement;
   const searchEngineBadge = document.getElementById('searchEngineBadge') as HTMLElement;
 
@@ -63,7 +66,7 @@
 
   function getTabsRenderKey(): string {
     return state.tabs
-      .map((tab) => `${tab.id}\u001f${tab.url}\u001f${tab.title}\u001f${tab.is_loading}`)
+      .map((tab) => `${tab.id}\u001f${tab.url}\u001f${tab.title}\u001f${tab.is_loading}\u001f${tab.is_private}`)
       .join('\u001e');
   }
 
@@ -93,7 +96,7 @@
     state.tabs.forEach((tab) => {
       const tabEl = document.createElement('div');
       const isActive = tab.id === activeId;
-      tabEl.className = `tab-item ${isActive ? 'active' : ''} ${tab.is_loading ? 'loading' : ''}`;
+      tabEl.className = `tab-item ${isActive ? 'active' : ''} ${tab.is_loading ? 'loading' : ''} ${tab.is_private ? 'private' : ''}`;
       tabEl.dataset.id = String(tab.id);
 
       // Favicon or Spinner
@@ -101,6 +104,8 @@
       faviconEl.className = 'tab-favicon';
       if (tab.is_loading) {
         faviconEl.innerHTML = `<svg class="spinner" viewBox="0 0 50 50"><circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle></svg>`;
+      } else if (tab.is_private) {
+        faviconEl.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="10" width="14" height="11" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>`;
       } else if (tab.url.includes('youtube.com')) {
         faviconEl.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="#ff0000"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>`;
       } else if (tab.url.includes('github.com')) {
@@ -115,7 +120,7 @@
       const titleEl = document.createElement('span');
       titleEl.className = 'tab-title';
       titleEl.textContent = tab.title || (tab.url ? new URL(tab.url).hostname : 'New Tab');
-      titleEl.title = tab.title || tab.url;
+      titleEl.title = `${tab.is_private ? 'Private · ' : ''}${tab.title || tab.url}`;
 
       // Close Button
       const closeBtn = document.createElement('button');
@@ -245,6 +250,18 @@
     sendIpc({ type: 'OpenSettings' });
   });
 
+  historyBtn.addEventListener('click', () => {
+    sendIpc({ type: 'OpenHistory' });
+  });
+
+  downloadsBtn.addEventListener('click', () => {
+    sendIpc({ type: 'OpenDownloads' });
+  });
+
+  privateTabBtn.addEventListener('click', () => {
+    sendIpc({ type: 'NewPrivateTab' });
+  });
+
   // Window Controls
   winMinBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -345,8 +362,22 @@
 
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        sendIpc({ type: 'GoBack' });
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        sendIpc({ type: 'GoForward' });
+      }
+      return;
+    }
+
     if (e.ctrlKey) {
-      if (e.key === 't' || e.key === 'T') {
+      if (e.shiftKey && (e.key === 'n' || e.key === 'N')) {
+        e.preventDefault();
+        sendIpc({ type: 'NewPrivateTab' });
+      } else if (e.key === 't' || e.key === 'T') {
         e.preventDefault();
         sendIpc({ type: 'NewTab', url: 'titan://newtab' });
       } else if (e.key === 'w' || e.key === 'W') {
@@ -362,6 +393,12 @@
       } else if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
         sendIpc({ type: 'Reload' });
+      } else if (e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        sendIpc({ type: 'OpenHistory' });
+      } else if (e.key === 'j' || e.key === 'J') {
+        e.preventDefault();
+        sendIpc({ type: 'OpenDownloads' });
       } else if (e.key === ',' || e.key === '<') {
         e.preventDefault();
         sendIpc({ type: 'OpenSettings' });

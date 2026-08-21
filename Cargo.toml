@@ -1,6 +1,6 @@
 [package]
 name = "titan-browser"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2021"
 description = "A modern, high-performance web browser built in Rust with multi-tab support and full YouTube playback."
 authors = ["Titan Browser Team"]

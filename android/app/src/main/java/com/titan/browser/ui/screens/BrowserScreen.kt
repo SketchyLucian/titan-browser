@@ -27,6 +27,7 @@ import com.titan.browser.model.Tab
 import com.titan.browser.ui.components.BookmarksSheet
 import com.titan.browser.ui.components.BottomToolbar
 import com.titan.browser.ui.components.FindInPageBar
+import com.titan.browser.ui.components.HistorySheet
 import com.titan.browser.ui.components.MenuBottomSheet
 import com.titan.browser.ui.components.Omnibar
 import com.titan.browser.ui.components.TabGrid
@@ -41,11 +42,13 @@ fun BrowserScreen(
     val tabs by viewModel.tabs.collectAsStateWithLifecycle()
     val activeTabId by viewModel.activeTabId.collectAsStateWithLifecycle()
     val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
+    val history by viewModel.history.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
 
     val isTabGridVisible by viewModel.isTabGridVisible.collectAsStateWithLifecycle()
     val isBookmarksVisible by viewModel.isBookmarksVisible.collectAsStateWithLifecycle()
+    val isHistoryVisible by viewModel.isHistoryVisible.collectAsStateWithLifecycle()
     val isSettingsVisible by viewModel.isSettingsVisible.collectAsStateWithLifecycle()
     val isFindInPageVisible by viewModel.isFindInPageVisible.collectAsStateWithLifecycle()
     val fullscreenView by viewModel.customFullscreenView.collectAsStateWithLifecycle()
@@ -62,6 +65,8 @@ fun BrowserScreen(
             viewModel.setTabGridVisible(false)
         } else if (isBookmarksVisible) {
             viewModel.setBookmarksVisible(false)
+        } else if (isHistoryVisible) {
+            viewModel.setHistoryVisible(false)
         } else if (isFindInPageVisible) {
             viewModel.setFindInPageVisible(false)
         } else {
@@ -115,6 +120,7 @@ fun BrowserScreen(
                     NewTabScreen(
                         onNavigate = { viewModel.navigate(it) },
                         bookmarks = bookmarks,
+                        isPrivate = activeTab?.isPrivate == true,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
@@ -150,7 +156,8 @@ fun BrowserScreen(
             canShow = fullscreenView == null &&
                 !isSettingsVisible &&
                 !isTabGridVisible &&
-                !isBookmarksVisible,
+                !isBookmarksVisible &&
+                !isHistoryVisible,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .imePadding()
@@ -213,6 +220,17 @@ fun BrowserScreen(
                     viewModel.removeBookmark(url)
                 },
                 onDismiss = { viewModel.setBookmarksVisible(false) }
+            )
+        }
+
+        if (isHistoryVisible) {
+            HistorySheet(
+                history = history,
+                onSelect = { url ->
+                    viewModel.navigate(url)
+                    viewModel.setHistoryVisible(false)
+                },
+                onDismiss = { viewModel.setHistoryVisible(false) }
             )
         }
 
@@ -300,7 +318,11 @@ private fun BrowserMenuHost(
         onToggleBookmark = viewModel::toggleBookmarkCurrentPage,
         onReload = viewModel::reload,
         onNewTab = viewModel::openNewTab,
+        onNewPrivateTab = viewModel::openPrivateTab,
         onOpenBookmarks = { viewModel.setBookmarksVisible(true) },
+        onOpenHistory = { viewModel.setHistoryVisible(true) },
+        onOpenDownloads = viewModel::openDownloads,
+        onOpenDefaultBrowserSettings = viewModel::openDefaultBrowserSettings,
         onFindInPage = { viewModel.setFindInPageVisible(true) },
         onToggleDesktopMode = viewModel::toggleDesktopMode,
         onShare = {

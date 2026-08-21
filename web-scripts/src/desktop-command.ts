@@ -4,6 +4,7 @@ type TitanDesktopCommand =
   | { type: 'goBack' }
   | { type: 'goForward' }
   | { type: 'reload' }
+  | { type: 'focusAddressBar' }
   | { type: 'setZoom'; zoom: number }
   | { type: 'initializeSettings'; state: unknown }
   | { type: 'switchSettingsView'; view: string }
@@ -33,6 +34,12 @@ interface Window {
     case 'reload':
       window.location.reload();
       break;
+    case 'focusAddressBar': {
+      const addressBar = document.getElementById('urlInput') as HTMLInputElement | null;
+      addressBar?.focus();
+      addressBar?.select();
+      break;
+    }
     case 'setZoom':
       document.body.style.zoom = String(command.zoom);
       break;

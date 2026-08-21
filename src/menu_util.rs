@@ -1,5 +1,44 @@
+use std::path::Path;
 use tao::platform::windows::WindowExtWindows;
 use tao::window::Window;
+
+#[cfg(target_os = "windows")]
+pub fn open_file(path: &Path) -> bool {
+    shell_open(&path.as_os_str().to_string_lossy())
+}
+
+#[cfg(target_os = "windows")]
+pub fn open_default_browser_settings() -> bool {
+    shell_open("ms-settings:defaultapps?registeredAppUser=Titan%20Browser")
+}
+
+#[cfg(target_os = "windows")]
+fn shell_open(target: &str) -> bool {
+    #[link(name = "shell32")]
+    extern "system" {
+        fn ShellExecuteW(
+            hwnd: isize,
+            operation: *const u16,
+            file: *const u16,
+            parameters: *const u16,
+            directory: *const u16,
+            show_command: i32,
+        ) -> isize;
+    }
+
+    const SW_SHOWNORMAL: i32 = 1;
+    let file: Vec<u16> = target.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        ShellExecuteW(
+            0,
+            std::ptr::null(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        ) > 32
+    }
+}
 
 #[cfg(target_os = "windows")]
 pub fn show_native_bookmark_context_menu(window: &Window) -> Option<u32> {

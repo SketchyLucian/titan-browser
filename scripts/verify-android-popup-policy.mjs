@@ -1,10 +1,15 @@
 import { execFile } from 'node:child_process';
+import { access } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const packageName = 'com.titan.browser.debug';
 const cdpPort = 9233;
+const apkPath = resolve(process.env.TITAN_ANDROID_APK || 'android/app/build/outputs/apk/debug/app-debug.apk');
+const skipInstall = process.argv.includes('--skip-install');
+const keepData = process.argv.includes('--keep-data');
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 async function adb(...args) {
@@ -33,11 +38,21 @@ function fixturePage() {
   return `<!doctype html>
     <html>
       <body>
-        <button id="popup" onclick="document.body.dataset.popupResult = window.open('/popup-destination', '_blank') === null ? 'blocked' : 'opened'">Popup</button>
+        <button id="popup" onclick="document.body.dataset.popupResult = window.open('/popup-destination', '_blank') === null ? 'blocked' : 'opened'">User popup</button>
         <a id="blank-link" href="/legitimate" target="_blank">Legitimate link</a>
         <button id="same-context" onclick="window.open('/same-context', '_self')">Same context</button>
         <iframe id="fixture-frame" name="fixture-frame"></iframe>
         <button id="named-frame" onclick="window.open('/frame-content', 'fixture-frame')">Named frame</button>
+        <script>
+          setTimeout(() => {
+            try {
+              document.body.dataset.automaticPopup = window.open('/automatic-popup', '_blank') ? 'opened' : 'blocked';
+            } catch (error) {
+              document.body.dataset.automaticPopup = 'blocked';
+              document.body.dataset.automaticPopupError = error && error.name ? error.name : 'error';
+            }
+          }, 250);
+        </script>
       </body>
     </html>`;
 }
@@ -59,6 +74,12 @@ const fixtureUrl = `http://127.0.0.1:${fixturePort}/`;
 let socket;
 
 try {
+  if (!skipInstall) {
+    await access(apkPath);
+    await adb('install', '-r', apkPath);
+  }
+  if (!keepData) await adb('shell', 'pm', 'clear', packageName);
+  await adb('logcat', '-c');
   await adb('reverse', `tcp:${fixturePort}`, `tcp:${fixturePort}`);
   await adb(
     'shell', 'am', 'start', '-W',
@@ -111,12 +132,12 @@ try {
     return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
   }
 
-  async function evaluate(expression) {
+  async function evaluate(expression, userGesture = false) {
     const result = await call('Runtime.evaluate', {
       expression,
       awaitPromise: true,
       returnByValue: true,
-      userGesture: true,
+      userGesture,
     });
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
     return result.result.value;
@@ -149,13 +170,16 @@ try {
 
   const targetCountBeforePopup = (await fetch(`${baseUrl}/json`).then((response) => response.json()))
     .filter((candidate) => candidate.type === 'page').length;
-  await tap('#popup');
-  const popup = await waitForValue(
-    () => evaluate(`({ result: document.body.dataset.popupResult, path: location.pathname })`),
+  const automaticPopup = await waitForValue(
+    () => evaluate(`({
+      result: document.body.dataset.automaticPopup,
+      error: document.body.dataset.automaticPopupError || '',
+      path: location.pathname
+    })`),
     (value) => value.result === 'blocked',
-    'script popup block'
+    'automatic popup block'
   );
-  const targetCountAfterPopup = (await fetch(`${baseUrl}/json`).then((response) => response.json()))
+  const targetCountAfterAutomaticPopup = (await fetch(`${baseUrl}/json`).then((response) => response.json()))
     .filter((candidate) => candidate.type === 'page').length;
 
   await tap('#named-frame');
@@ -165,14 +189,26 @@ try {
     'named-frame navigation'
   );
 
-  await tap('#blank-link');
-  const blankLink = await waitForValue(
-    () => evaluate('location.pathname'),
-    (value) => value === '/legitimate',
-    'target-blank same-tab navigation'
+  await tap('#popup');
+  const userPopupTargets = await waitForValue(
+    () => fetch(`${baseUrl}/json`).then((response) => response.json()),
+    (value) => value.some((candidate) => candidate.type === 'page' && candidate.url.endsWith('/popup-destination')),
+    'user popup tab'
   );
+  const sourceAfterUserPopup = await evaluate(`({ result: document.body.dataset.popupResult, path: location.pathname })`);
+  await adb('shell', 'input', 'keyevent', '4');
+  await wait(500);
 
-  await navigate(fixtureUrl);
+  await tap('#blank-link');
+  const blankLinkTargets = await waitForValue(
+    () => fetch(`${baseUrl}/json`).then((response) => response.json()),
+    (value) => value.some((candidate) => candidate.type === 'page' && candidate.url.endsWith('/legitimate')),
+    'target-blank tab'
+  );
+  const sourceAfterBlankLink = await evaluate('location.pathname');
+  await adb('shell', 'input', 'keyevent', '4');
+  await wait(500);
+
   await tap('#same-context');
   const sameContext = await waitForValue(
     () => evaluate('location.pathname'),
@@ -181,9 +217,13 @@ try {
   );
 
   const result = {
-    popupBlocked: popup.result === 'blocked' && popup.path === '/',
-    popupCreatedNoTab: targetCountAfterPopup === targetCountBeforePopup,
-    legitimateBlankLinkUsedSameTab: blankLink === '/legitimate',
+    automaticPopupBlocked: automaticPopup.result === 'blocked' && automaticPopup.path === '/',
+    automaticPopupCreatedNoTab: targetCountAfterAutomaticPopup === targetCountBeforePopup,
+    userPopupOpenedTab: sourceAfterUserPopup.result === 'opened' &&
+      sourceAfterUserPopup.path === '/' &&
+      userPopupTargets.some((candidate) => candidate.url.endsWith('/popup-destination')),
+    legitimateBlankLinkOpenedTab: sourceAfterBlankLink === '/' &&
+      blankLinkTargets.some((candidate) => candidate.url.endsWith('/legitimate')),
     namedFrameStillWorks: namedFrame === '/frame-content',
     explicitSameContextStillWorks: sameContext === '/same-context',
   };

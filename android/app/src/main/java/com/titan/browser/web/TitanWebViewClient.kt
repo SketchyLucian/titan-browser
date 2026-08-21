@@ -9,6 +9,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.net.toUri
 import com.titan.browser.model.BrowserSettings
 import java.io.ByteArrayInputStream
 import java.util.concurrent.Executors
@@ -52,7 +53,7 @@ class TitanWebViewClient(
 
         // Handle external schemes: mailto, tel, sms, intent, market, etc.
         return try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            val intent = Intent(Intent.ACTION_VIEW, url.toUri()).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
@@ -139,7 +140,7 @@ class TitanWebViewClient(
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
         if (url != null) {
-            currentPageHost = Uri.parse(url).host?.lowercase().orEmpty()
+            currentPageHost = url.toUri().host?.lowercase().orEmpty()
             onPageStartedCallback(url)
             val settings = settingsProvider()
             if (view != null) {
@@ -161,7 +162,7 @@ class TitanWebViewClient(
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
         if (url != null && view != null) {
-            currentPageHost = Uri.parse(url).host?.lowercase().orEmpty()
+            currentPageHost = url.toUri().host?.lowercase().orEmpty()
             onPageFinishedCallback(url, view.canGoBack(), view.canGoForward())
         }
     }

@@ -36,6 +36,57 @@ declare const __TITAN_DESKTOP_TAB_STATE_CONFIG__: TitanDesktopTabStateConfig;
         }, 400);
     }
 
+    function postCommand(command) {
+        try {
+            window.ipc.postMessage(JSON.stringify(command));
+        } catch (_) {
+            // The native bridge is unavailable in ordinary web contexts.
+        }
+    }
+
+    window.addEventListener('keydown', (event) => {
+        const key = event.key.toLowerCase();
+
+        if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+            if (key === 'arrowleft') {
+                event.preventDefault();
+                postCommand({ type: 'GoBack' });
+            } else if (key === 'arrowright') {
+                event.preventDefault();
+                postCommand({ type: 'GoForward' });
+            }
+            return;
+        }
+
+        if (!event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
+
+        if (key === 'n' && event.shiftKey) {
+            event.preventDefault();
+            postCommand({ type: 'NewPrivateTab' });
+        } else if (key === 't' && !event.shiftKey) {
+            event.preventDefault();
+            postCommand({ type: 'NewTab', url: 'titan://newtab' });
+        } else if (key === 'w' && !event.shiftKey) {
+            event.preventDefault();
+            postCommand({ type: 'CloseTab', tab_id: tabId });
+        } else if (key === 'l') {
+            event.preventDefault();
+            postCommand({ type: 'FocusAddressBar' });
+        } else if (key === 'r') {
+            event.preventDefault();
+            postCommand({ type: 'Reload' });
+        } else if (key === 'h' && !event.shiftKey) {
+            event.preventDefault();
+            postCommand({ type: 'OpenHistory' });
+        } else if (key === 'j' && !event.shiftKey) {
+            event.preventDefault();
+            postCommand({ type: 'OpenDownloads' });
+        } else if (key === ',' && !event.shiftKey) {
+            event.preventDefault();
+            postCommand({ type: 'OpenSettings' });
+        }
+    }, true);
+
     window.addEventListener('popstate', notify);
     window.addEventListener('load', notify);
     document.addEventListener('visibilitychange', notify);

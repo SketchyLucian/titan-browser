@@ -2,14 +2,17 @@ package com.titan.browser.web
 
 import android.graphics.Bitmap
 import android.os.Message
+import android.net.Uri
 import android.view.View
 import android.webkit.GeolocationPermissions
 import android.webkit.JsPromptResult
 import android.webkit.JsResult
 import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import com.titan.browser.model.BrowserSettings
+import java.net.URI
 
 class TitanWebChromeClient(
     private val onProgressUpdate: (progress: Int) -> Unit,
@@ -18,7 +21,16 @@ class TitanWebChromeClient(
     private val onShowFullscreen: (view: View, callback: CustomViewCallback) -> Unit,
     private val onHideFullscreen: () -> Unit,
     private val settingsProvider: () -> BrowserSettings,
-    private val onCreatePopupTab: () -> WebView?
+    private val onCreatePopupTab: () -> WebView?,
+    private val onShowFileChooserRequest: (
+        ValueCallback<Array<Uri>>,
+        FileChooserParams
+    ) -> Boolean,
+    private val onGeolocationPermissionRequest: (
+        String,
+        GeolocationPermissions.Callback
+    ) -> Unit,
+    private val onWebPermissionRequest: (PermissionRequest) -> Unit
 ) : WebChromeClient() {
 
     override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -94,7 +106,7 @@ class TitanWebChromeClient(
         isUserGesture: Boolean,
         resultMsg: Message?
     ): Boolean {
-        if (PopupPolicy.shouldBlockNewWindow(view?.url, settingsProvider())) {
+        if (PopupPolicy.shouldBlockNewWindow(view?.url, isUserGesture, settingsProvider())) {
             return false
         }
 
@@ -102,18 +114,36 @@ class TitanWebChromeClient(
         val popupWebView = onCreatePopupTab() ?: return false
         transport.webView = popupWebView
         resultMsg.sendToTarget()
+        view?.targetBlankUrl()?.let { url ->
+            val headers = PrivacyManager.navigationHeaders(settingsProvider())
+            popupWebView.postDelayed({
+                if (popupWebView.url.isNullOrBlank() || popupWebView.url == "about:blank") {
+                    popupWebView.loadUrl(url, headers)
+                }
+            }, 100)
+        }
         return true
+    }
+
+    override fun onShowFileChooser(
+        webView: WebView?,
+        filePathCallback: ValueCallback<Array<Uri>>?,
+        fileChooserParams: FileChooserParams?
+    ): Boolean {
+        if (filePathCallback == null || fileChooserParams == null) return false
+        return onShowFileChooserRequest(filePathCallback, fileChooserParams)
     }
 
     override fun onGeolocationPermissionsShowPrompt(
         origin: String?,
         callback: GeolocationPermissions.Callback?
     ) {
-        callback?.invoke(origin, false, false)
+        if (origin == null || callback == null) return
+        onGeolocationPermissionRequest(origin, callback)
     }
 
     override fun onPermissionRequest(request: PermissionRequest?) {
-        request?.deny()
+        request?.let(onWebPermissionRequest)
     }
 
     private fun isScamDialog(message: String?): Boolean {
@@ -136,5 +166,20 @@ class TitanWebChromeClient(
             text.contains("virus detected") ||
             text.contains("device infected") ||
             text.contains("security warning")
+    }
+
+    private fun WebView.targetBlankUrl(): String? {
+        val hit = hitTestResult ?: return null
+        val isAnchor = hit.type == WebView.HitTestResult.SRC_ANCHOR_TYPE ||
+            hit.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE
+        if (!isAnchor) return null
+        val rawTarget = hit.extra?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching {
+            val resolved = URI(url.orEmpty()).resolve(rawTarget).toString()
+            resolved.takeIf {
+                it.startsWith("http://", ignoreCase = true) ||
+                    it.startsWith("https://", ignoreCase = true)
+            }
+        }.getOrNull()
     }
 }

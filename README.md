@@ -1,97 +1,91 @@
-# 🚀 Titan Browser
+# Titan Browser
 
-A modern, high-performance web browser written in **Rust** using `tao` and `wry`.
+Titan is a multi-tab browser for Windows and Android. The Windows app uses Rust, Wry, and WebView2. The Android app uses Kotlin, Jetpack Compose, and Android WebView.
 
-![Rust](https://img.shields.io/badge/Rust-1.97%2B-orange?logo=rust)
-![Platform](https://img.shields.io/badge/Platform-Windows-blue)
-![Installer](https://img.shields.io/badge/Installer-MSI%20(327%20KB)-brightgreen)
-![License](https://img.shields.io/badge/License-MIT-green)
+## Browser features
 
----
+- Persistent tabs, active-tab recovery, history, bookmarks, and download records
+- Direct downloads and file uploads
+- OAuth/payment popups with opener support on desktop and user-gesture popup handling on Android
+- Private tabs with isolated profiles
+- Address-bar search, back/forward/reload, desktop-mode toggle on Android, and find in page
+- Native profile-wide browsing-data deletion
+- Per-site camera, microphone, and location prompts on Android
+- Ad and tracker blocking with shared contract tests
+- Windows and Android default-browser registration
 
-## ✨ Features
+Desktop shortcuts include `Ctrl+T`, `Ctrl+Shift+N`, `Ctrl+W`, `Ctrl+L`, `Ctrl+R`, `Ctrl+H`, `Ctrl+J`, `Alt+Left`, and `Alt+Right`. They work while page content has focus.
 
-- **📺 YouTube Ready**: Full 4K 60fps video playback, synchronized audio, fullscreen mode, comments, and logins out of the box.
-- **⚡ Native Rust Architecture**: Clean multi-threaded architecture with asynchronous IPC event routing, zero GC overhead, and 734 KB binary footprint.
-- **📑 Multi-Tab Engine**: Open, close, switch, and manage independent browser tabs with dynamic titles and loading spinners.
-- **🔍 Smart Omnibar**:
-  - Automatically recognizes domains (e.g. `youtube.com`, `crates.io`, `localhost:3000`).
-  - Google search engine queries.
-  - Search prefixes: `@yt` or `yt:` (YouTube search), `@gh` or `gh:` (GitHub search), `@ddg` (DuckDuckGo).
-- **★ Bookmarks Bar**: Pre-loaded with quick links (YouTube, Google, Rust Docs, GitHub, Reddit, Wikipedia) + dynamic bookmark toggling.
-- **🧭 Navigation Controls**: Back, Forward, Reload (animated spinner), Home.
-- **🔍 Zoom Controls**: Dynamic zoom in/out (`0.5x` to `2.5x`).
-- **⌨️ Keyboard Shortcuts**:
-  - `Ctrl + T`: Open new tab
-  - `Ctrl + W`: Close active tab
-  - `Ctrl + L`: Focus and select address bar
-  - `Ctrl + R`: Reload page
-  - `Alt + Left`: Back
-  - `Alt + Right`: Forward
+## Build and test
 
----
+Install Rust, Node.js 22 or newer, and the platform toolchain. Then run:
 
-## 📦 Windows MSI Installer
-
-You can install Titan Browser directly on Windows using the bundled **MSI Installer**:
-
-- **Installer Path**: [`target/TitanBrowserInstaller.msi`](file:///c:/Users/quang/Documents/antigravity/focused-newton/target/TitanBrowserInstaller.msi) (327 KB)
-
-### To Install:
-Double-click [`TitanBrowserInstaller.msi`](file:///c:/Users/quang/Documents/antigravity/focused-newton/target/TitanBrowserInstaller.msi) or run from PowerShell:
 ```powershell
-msiexec /i .\target\TitanBrowserInstaller.msi
-```
-This automatically installs the browser to `C:\Program Files\Titan Browser` and creates Start Menu and Desktop shortcuts.
-
----
-
-## 🛠️ How to Run from Source
-
-### Development Mode
-```powershell
-cargo run
-```
-
-### Standalone Release Binary
-```powershell
+npm ci
+npm run build
+cargo fmt --all -- --check
+cargo test
+cargo clippy --all-targets -- -D warnings
 cargo build --release
-.\target\release\titan-browser.exe
 ```
 
-### Build MSI Package
+The Windows executable is `target/release/titan-browser.exe`.
+
+Run the desktop browser-level checks after building the debug executable:
+
+```powershell
+cargo build
+npm run verify:desktop-popups
+npm run verify:desktop-download
+npm run verify:desktop-session
+```
+
+These checks use isolated temporary profiles. They verify popup opener messaging, private-cookie isolation, native data clearing, download contents and status, content-focused shortcuts, history, and restart recovery.
+
+Build the Windows installer with WiX 7:
+
 ```powershell
 & "C:\Program Files\WiX Toolset v7.0\bin\wix.exe" build -arch x64 wix\main.wxs -o target\TitanBrowserInstaller.msi
 ```
 
----
+The MSI registers Titan with Windows Default Apps for HTTP and HTTPS. The user must still confirm the default-browser choice in Windows Settings.
 
-## 📱 Android Version
+## Android
 
-Titan Browser also includes a native Android client built with **Kotlin** and **Jetpack Compose** in the [`android/`](android/README.md) directory.
-
-### Quick Start for Android:
-1. Open [`android/`](android/) in **Android Studio**.
-2. Run on device or build via Gradle:
-```bash
-cd android
-./gradlew assembleDebug
-```
-See the [Android README](android/README.md) for full architectural and feature details.
-
----
-
-## Cross-platform Parity
-
-Shared browser behavior should have one contract that both desktop and Android verify. Adblock URL decisions are covered by [`shared/adblock_contract.json`](shared/adblock_contract.json).
-
-Run these checks before merging platform changes:
+From the `android` directory:
 
 ```powershell
-cargo test
-cd android
-.\gradlew.bat testDebugUnitTest assembleDebug
+.\gradlew.bat testDebugUnitTest lintDebug lintRelease assembleDebug assembleRelease
 ```
 
-GitHub Actions also runs the same desktop and Android checks on pushes and pull requests.
+The debug APK is `android/app/build/outputs/apk/debug/app-debug.apk`. For a one-person personal install, the debug-signed APK is acceptable. For distribution, use a signed release build.
 
+With a phone connected through USB or Wi-Fi ADB, run:
+
+```powershell
+npm run verify:android-device
+npm run verify:android-popups
+```
+
+The device verifier installs the debug APK, opens Titan through an Android `VIEW` intent, and checks login-cookie persistence, DownloadManager output, upload chooser handoff, camera/microphone/location prompts, session restore, and runtime crash logs. See [android/README.md](android/README.md) for release-signing inputs and device checks.
+
+## Release signing
+
+Do not distribute unsigned or debug-signed builds. A debug-signed APK is only appropriate for a personal device install.
+
+Android release signing reads these Gradle properties or environment variables:
+
+- `TITAN_RELEASE_STORE_FILE`
+- `TITAN_RELEASE_STORE_PASSWORD`
+- `TITAN_RELEASE_KEY_ALIAS`
+- `TITAN_RELEASE_KEY_PASSWORD`
+
+If they are absent, Gradle deliberately emits `app-release-unsigned.apk`.
+
+Install an organization-owned code-signing certificate (including its private key) in the Windows `CurrentUser\My` certificate store, set `TITAN_WINDOWS_CERT_SHA1`, and run:
+
+```powershell
+.\scripts\sign-windows.ps1
+```
+
+The script signs and verifies both `titan-browser.exe` and `TitanBrowserInstaller.msi` with SHA-256 and an RFC 3161 timestamp. Set `TITAN_WINDOWS_CERT_STORE=LocalMachine` for the machine certificate store, `TITAN_WINDOWS_SIGNTOOL` for a non-standard SignTool path, or `TITAN_WINDOWS_TIMESTAMP_URL` for a different timestamp service. Certificates and private keys must remain outside the repository.

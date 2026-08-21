@@ -7,8 +7,10 @@ internal object PopupPolicy {
 
     fun shouldBlockNewWindow(
         sourceUrl: String?,
+        isUserGesture: Boolean,
         settings: BrowserSettings
     ): Boolean {
+        if (isUserGesture) return false
         if (!settings.adblockEnabled || !settings.blockPopups) return false
 
         val sourceHost = runCatching {

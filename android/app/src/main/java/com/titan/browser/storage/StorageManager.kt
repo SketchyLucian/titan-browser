@@ -2,8 +2,12 @@ package com.titan.browser.storage
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
+import androidx.core.content.edit
 import com.titan.browser.model.Bookmark
+import com.titan.browser.model.BrowserSession
 import com.titan.browser.model.BrowserSettings
+import com.titan.browser.model.HistoryEntry
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -19,7 +23,11 @@ class StorageManager(context: Context) {
     companion object {
         private const val KEY_BOOKMARKS = "titan_bookmarks"
         private const val KEY_SETTINGS = "titan_settings"
+        private const val KEY_HISTORY = "titan_history"
+        private const val KEY_SESSION = "titan_session"
         private const val KEY_ADBLOCK_FILTER_PREFIX = "adblock_filter_"
+        private const val TAG = "TitanStorage"
+        private const val MAX_HISTORY_ENTRIES = 2_000
 
         val DEFAULT_BOOKMARKS = listOf(
             Bookmark("YouTube", "https://www.youtube.com"),
@@ -29,6 +37,23 @@ class StorageManager(context: Context) {
             Bookmark("Reddit", "https://reddit.com"),
             Bookmark("Wikipedia", "https://en.wikipedia.org")
         )
+
+        internal fun updateHistory(
+            history: List<HistoryEntry>,
+            title: String,
+            url: String,
+            nowMs: Long
+        ): List<HistoryEntry> {
+            val previous = history.firstOrNull { it.url == url }
+            val entry = HistoryEntry(
+                title = title.ifBlank { url },
+                url = url,
+                lastVisitedMs = nowMs,
+                visitCount = previous?.visitCount?.plus(1) ?: 1
+            )
+            return (listOf(entry) + history.filterNot { it.url == url })
+                .take(MAX_HISTORY_ENTRIES)
+        }
     }
 
     fun loadBookmarks(): List<Bookmark> {
@@ -36,7 +61,8 @@ class StorageManager(context: Context) {
         return if (raw != null) {
             try {
                 json.decodeFromString<List<Bookmark>>(raw)
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                Log.e(TAG, "Could not read bookmarks", error)
                 DEFAULT_BOOKMARKS
             }
         } else {
@@ -48,8 +74,9 @@ class StorageManager(context: Context) {
     fun saveBookmarks(bookmarks: List<Bookmark>) {
         try {
             val raw = json.encodeToString(bookmarks)
-            prefs.edit().putString(KEY_BOOKMARKS, raw).apply()
-        } catch (_: Exception) {
+            prefs.edit { putString(KEY_BOOKMARKS, raw) }
+        } catch (error: Exception) {
+            Log.e(TAG, "Could not save bookmarks", error)
         }
     }
 
@@ -83,7 +110,8 @@ class StorageManager(context: Context) {
                     .withPrivacyDefaults()
                 saveSettings(decoded)
                 decoded
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                Log.e(TAG, "Could not read settings", error)
                 BrowserSettings().withPrivacyDefaults()
             }
         } else {
@@ -94,9 +122,28 @@ class StorageManager(context: Context) {
     fun saveSettings(settings: BrowserSettings) {
         try {
             val raw = json.encodeToString(settings)
-            prefs.edit().putString(KEY_SETTINGS, raw).apply()
-        } catch (_: Exception) {
+            prefs.edit { putString(KEY_SETTINGS, raw) }
+        } catch (error: Exception) {
+            Log.e(TAG, "Could not save settings", error)
         }
+    }
+
+    fun loadHistory(): List<HistoryEntry> = decodeList(KEY_HISTORY)
+
+    fun recordHistoryVisit(title: String, url: String): List<HistoryEntry> {
+        val updated = updateHistory(loadHistory(), title, url, System.currentTimeMillis())
+        saveValue(KEY_HISTORY, updated)
+        return updated
+    }
+
+    fun clearHistory() {
+        prefs.edit { remove(KEY_HISTORY) }
+    }
+
+    fun loadSession(): BrowserSession = decodeValue(KEY_SESSION) ?: BrowserSession()
+
+    fun saveSession(session: BrowserSession) {
+        saveValue(KEY_SESSION, session)
     }
 
     fun loadAdblockFilterLists(ids: Collection<String>): Map<String, String> =
@@ -105,8 +152,30 @@ class StorageManager(context: Context) {
         }.toMap()
 
     fun saveAdblockFilterList(id: String, content: String) {
-        prefs.edit().putString(KEY_ADBLOCK_FILTER_PREFIX + id, content).apply()
+        prefs.edit { putString(KEY_ADBLOCK_FILTER_PREFIX + id, content) }
     }
+
+    private inline fun <reified T> decodeValue(key: String): T? {
+        val raw = prefs.getString(key, null) ?: return null
+        return try {
+            json.decodeFromString<T>(raw)
+        } catch (error: Exception) {
+            Log.e(TAG, "Could not read $key", error)
+            null
+        }
+    }
+
+    private inline fun <reified T> decodeList(key: String): List<T> =
+        decodeValue<List<T>>(key).orEmpty()
+
+    private inline fun <reified T> saveValue(key: String, value: T) {
+        try {
+            prefs.edit { putString(key, json.encodeToString(value)) }
+        } catch (error: Exception) {
+            Log.e(TAG, "Could not save $key", error)
+        }
+    }
+
 
     private fun BrowserSettings.withDefaultAdblockLists(): BrowserSettings {
         val merged = adblockFilterLists.toMutableList()
