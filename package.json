@@ -5,7 +5,8 @@
   "scripts": {
     "build": "npm run build:ui && npm run build:web-scripts",
     "build:ui": "tsc -p tsconfig.json",
-    "build:web-scripts": "tsc -p web-scripts/tsconfig.json"
+    "build:web-scripts": "tsc -p web-scripts/tsconfig.json",
+    "verify:android-popups": "node scripts/verify-android-popup-policy.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

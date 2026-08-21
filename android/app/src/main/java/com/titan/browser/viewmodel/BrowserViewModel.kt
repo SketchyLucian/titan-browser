@@ -210,7 +210,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             },
             onHideFullscreen = {
                 hideFullscreenVideo()
-            }
+            },
+            settingsProvider = { _settings.value },
+            onCreatePopupTab = { createPopupTab() }
         )
 
         webView.webViewClient = TitanWebViewClient(
@@ -246,6 +248,28 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             }
         )
 
+        return webView
+    }
+
+    private fun createPopupTab(): WebView {
+        getActiveTab()?.webView?.onPause()
+
+        val tabId = java.util.UUID.randomUUID().toString()
+        val webView = createConfiguredWebView(tabId)
+        val tab = Tab(
+            id = tabId,
+            url = "about:blank",
+            title = "Loading...",
+            webView = webView,
+            isLoading = true
+        )
+
+        _tabs.update { it + tab }
+        _activeTabId.value = tabId
+        _loadingProgress.value = 10
+        _isLoading.value = true
+        _isToolbarVisible.value = true
+        _isTabGridVisible.value = false
         return webView
     }
 

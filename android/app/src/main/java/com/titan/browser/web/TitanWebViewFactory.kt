@@ -53,7 +53,7 @@ object TitanWebViewFactory {
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         settings.setGeolocationEnabled(false)
         settings.setNeedInitialFocus(false)
-        settings.setSupportMultipleWindows(false)
+        settings.setSupportMultipleWindows(true)
 
         // 4. Keep provider-backed Safe Browsing enabled.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
