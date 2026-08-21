@@ -703,8 +703,6 @@ impl AdblockEngineManager {
             "youtube.com##.ytp-ad-message-container".into(),
             "youtube.com##.ytp-ad-overlay-slot".into(),
             "youtube.com##.ytp-ad-action-interstitial".into(),
-            "youtube.com##.video-ads".into(),
-            "youtube.com##.ytp-ad-module".into(),
             "youtube.com##tp-yt-paper-dialog:has(#feedback.ytd-enforcement-message-view-model)".into(),
             "reddit.com##.promotedlink".into(),
             "reddit.com##shreddit-comment-ad".into(),
@@ -773,7 +771,6 @@ impl AdblockEngineManager {
     pub fn get_ublock_quick_fixes_rules() -> Vec<String> {
         vec![
             // Anti-Adblock Defusers & Fast YouTube fixes
-            "||googlevideo.com/videoplayback$domain=youtube.com,xhr,redirect=noopjs".into(),
             "@@||youtube.com/api/stats/playback".into(),
             "@@||youtube.com/api/stats/delayplay".into(),
             "@@||youtube.com/api/stats/watchtime".into(),
@@ -835,6 +832,19 @@ mod tests {
             "main_frame",
         );
         assert!(!decision.matched, "Wikipedia should not be blocked");
+
+        // YouTube serves ads and normal media from the same googlevideo endpoint.
+        // Blocking every request here breaks playback; page-level response cleanup
+        // and the ad skipper handle video ads without sacrificing the real video.
+        let decision = manager.check_network_request(
+            "https://rr1---sn.example.googlevideo.com/videoplayback?id=content",
+            "https://www.youtube.com/watch?v=123",
+            "xhr",
+        );
+        assert!(
+            !decision.matched,
+            "YouTube content segments must not be blocked indiscriminately"
+        );
     }
 
     #[test]
