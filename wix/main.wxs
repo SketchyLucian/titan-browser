@@ -15,7 +15,9 @@
     <!-- Application Installation Directory in Program Files -->
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Titan Browser">
-        <Component Id="MainExecutable" Guid="71B8D1C4-0545-422E-8E0E-4E6CA6A76BA2">
+        <Component Id="MainExecutable"
+                   Guid="71B8D1C4-0545-422E-8E0E-4E6CA6A76BA2"
+                   Bitness="always64">
           <File Id="TitanBrowserExe" Source="target\release\titan-browser.exe" KeyPath="yes" />
         </Component>
       </Directory>
