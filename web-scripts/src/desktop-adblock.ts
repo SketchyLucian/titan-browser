@@ -32,6 +32,7 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
 
         const currentHost = (window.location.hostname || '').toLowerCase();
         const currentHref = (window.location.href || '').toLowerCase();
+        const isYouTube = currentHost.includes('youtube.com') || currentHost.includes('youtu.be');
 
         if (!currentHost || currentHref.startsWith('titan://') || currentHref.startsWith('about:')) return;
 
@@ -44,6 +45,77 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
         const AD_NETWORKS_REGEX = /(^|\.)(monetag|adsterra|propellerads|hilltopads|clickadu|clckr|popcash|popads|exoclick|juicyads|trafficstars|ad-maven|adcash|smartadserver|histats|dtscout|propu\.sh|onclickbright|onclicksuper|deloton|highperformancegate|al5smvpt45|feedify|pushwoosh|pushassist|tsyndicate|etahub|bignox|trafficjunky|rtmark|in-page-push|adrotate|doubleclick|googleadservices|googlesyndication|adservice\.google|pagead|2mdn|adnxs|advertising\.com|rubiconproject|pubmatic|criteo|openx|bidswitch|indexexchange|amazon-adsystem|adroll|media\.net|moatads|outbrain|taboola|mgid|revcontent|inmobi|flashtalking|exponential|adform|adcolony|applovin|unityads|vungle|chartbeat|scorecardresearch|zedo|adblade|yieldmo|sharethrough|triplelift|teads|undertone|spotx|sovrn|sonobi|gumgum|quantserve|quantcount|lijit|adtech|tribalfusion|clicksor|buysellads|carbonads|serving-sys|eyeota|simpli\.fi|clarity\.ms|hotjar|fullstory|mouseflow|luckyorange|crazyegg|inspectlet|logrocket|smartlook|segment\.io|mixpanel|amplitude|heapanalytics|kissmetrics|woopra|branch\.io|appsflyer|adjust\.com|kochava|singular\.net)(\.|\/|$)/i;
 
         const AD_PATH_REGEX = /(\/ads?\.js|\/ad-banner\.|\/advertisement\.|\/banner_ads\/|\/pagead\/|&ad_type=|&ad_url=|&adurl=|\/popunder|\/pop_under|\/floating_ad|\/interstitial)/i;
+
+        // YouTube carries ad metadata inside otherwise legitimate player responses.
+        // Remove only the ad objects; blocking googlevideo wholesale also blocks the real video.
+        const YOUTUBE_AD_KEYS = new Set([
+            'adPlacements',
+            'playerAds',
+            'adSlots',
+            'adBreakHeartbeatParams',
+            'adBreakParams',
+            'adPlacementRenderer',
+            'linearAdSequenceRenderer',
+            'playerLegacyDesktopWatchAdsRenderer',
+            'playerAdParams'
+        ]);
+
+        function stripYouTubeAdMetadata(value, seen) {
+            if (!value || typeof value !== 'object') return value;
+            const visited = seen || new WeakSet();
+            if (visited.has(value)) return value;
+            visited.add(value);
+
+            if (Array.isArray(value)) {
+                for (const item of value) stripYouTubeAdMetadata(item, visited);
+                return value;
+            }
+
+            for (const key of Object.keys(value)) {
+                if (YOUTUBE_AD_KEYS.has(key)) {
+                    try { delete value[key]; } catch(e) {}
+                    continue;
+                }
+                stripYouTubeAdMetadata(value[key], visited);
+            }
+            return value;
+        }
+
+        function looksLikeYouTubePlayerPayload(text) {
+            return typeof text === 'string' &&
+                (text.includes('"adPlacements"') || text.includes('"playerAds"') || text.includes('"adSlots"'));
+        }
+
+        if (blockVideoAds && isYouTube) {
+            const originalJsonParse = JSON.parse;
+            JSON.parse = function(text, reviver) {
+                const parsed = originalJsonParse.call(this, text, reviver);
+                return looksLikeYouTubePlayerPayload(text)
+                    ? stripYouTubeAdMetadata(parsed)
+                    : parsed;
+            };
+
+            if (window.Response && Response.prototype.json) {
+                const originalResponseJson = Response.prototype.json;
+                Response.prototype.json = async function() {
+                    const parsed = await originalResponseJson.call(this);
+                    return this.url && this.url.includes('/youtubei/v1/player')
+                        ? stripYouTubeAdMetadata(parsed)
+                        : parsed;
+                };
+            }
+
+            try {
+                let initialPlayerResponse;
+                Object.defineProperty(window, 'ytInitialPlayerResponse', {
+                    configurable: true,
+                    get: function() { return initialPlayerResponse; },
+                    set: function(value) {
+                        initialPlayerResponse = stripYouTubeAdMetadata(value);
+                    }
+                });
+            } catch(e) {}
+        }
 
         // Helper to match URL against ad/tracker rules
         function isBlockedUrl(testUrl, reqType) {
@@ -275,9 +347,7 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
                 '.ytp-ad-overlay-container',
                 '.ytp-ad-message-container',
                 '.ytp-ad-overlay-slot',
-                '.ytp-ad-action-interstitial',
-                '.video-ads',
-                '.ytp-ad-module'
+                '.ytp-ad-action-interstitial'
             ];
 
             if (Array.isArray(DYNAMIC_SELECTORS) && DYNAMIC_SELECTORS.length > 0) {
@@ -355,42 +425,66 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
         }
 
         // 8. Video Ad Auto-Skipper & Fast-Forward (Active on YouTube)
-        if (blockVideoAds && (currentHost.includes('youtube.com') || currentHost.includes('youtu.be'))) {
+        if (blockVideoAds && isYouTube) {
             function handleVideoAds() {
+                let foundAdUi = false;
                 try {
                     const skipSelectors = [
-                        '.ytp-ad-skip-button',
-                        '.ytp-ad-skip-button-modern',
-                        '.ytp-skip-ad-button',
-                        '.ytp-ad-skip-button-slot',
+                        'button.ytp-ad-skip-button',
+                        'button.ytp-ad-skip-button-modern',
+                        'button.ytp-skip-ad-button',
+                        '.ytp-ad-skip-button-slot button',
+                        '.ytp-ad-skip-button-container button',
+                        '[class*="ytp-ad-skip-button"] button',
                         '.ytp-ad-overlay-close-button',
                         '.videoAdUiSkipButton',
-                        '[id^="skip-button"]',
-                        '.ytp-ad-text.ytp-ad-preview-text'
+                        '[id^="skip-button"] button',
+                        'button[id^="skip-button"]'
                     ];
 
                     for (const sel of skipSelectors) {
-                        const btn = document.querySelector(sel);
-                        if (btn) {
-                            btn.click();
+                        const buttons = document.querySelectorAll(sel);
+                        for (const btn of buttons) {
+                            foundAdUi = true;
+                            if (typeof btn.click === 'function') btn.click();
                         }
                     }
 
                     const adElements = document.querySelectorAll('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
                     if (adElements.length > 0) {
+                        foundAdUi = true;
                         const videos = document.querySelectorAll('video');
                         videos.forEach(v => {
-                            if (v && !isNaN(v.duration) && v.duration > 0) {
-                                v.muted = true;
-                                v.playbackRate = 16.0;
+                            if (!v) return;
+                            v.muted = true;
+                            v.playbackRate = 16.0;
+                            if (Number.isFinite(v.duration) && v.duration > 0) {
                                 v.currentTime = v.duration;
+                            } else if (v.seekable && v.seekable.length > 0) {
+                                v.currentTime = v.seekable.end(v.seekable.length - 1);
                             }
                         });
                     }
                 } catch(e) {}
+                return foundAdUi;
             }
 
-            setInterval(handleVideoAds, 300);
+            let videoAdTimer = 0;
+            function scheduleVideoAdCheck(delay) {
+                window.clearTimeout(videoAdTimer);
+                videoAdTimer = window.setTimeout(() => {
+                    const foundAdUi = handleVideoAds();
+                    const nextDelay = document.hidden ? 3000 : (foundAdUi ? 100 : 1000);
+                    scheduleVideoAdCheck(nextDelay);
+                }, delay);
+            }
+
+            const playerObserver = new MutationObserver(() => scheduleVideoAdCheck(0));
+            if (document.documentElement) {
+                playerObserver.observe(document.documentElement, { childList: true, subtree: true });
+            }
+            document.addEventListener('visibilitychange', () => scheduleVideoAdCheck(0));
+            scheduleVideoAdCheck(0);
         }
     } catch(e) {}
 })();

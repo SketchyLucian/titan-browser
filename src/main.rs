@@ -2,6 +2,8 @@
 
 mod adblock_engine;
 mod browser;
+#[cfg(target_os = "windows")]
+mod desktop_adblock;
 mod drag_util;
 mod ipc;
 mod menu_util;
@@ -22,7 +24,9 @@ use tao::{
 
 fn main() {
     // Crucial for Windows: Set WebView2 user data folder to %LOCALAPPDATA%\TitanBrowser\webview_profile
-    let webview_data_dir = get_app_data_dir().join("webview_profile");
+    let webview_data_dir = std::env::var_os("TITAN_WEBVIEW_DATA_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| get_app_data_dir().join("webview_profile"));
     let _ = std::fs::create_dir_all(&webview_data_dir);
     std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_data_dir);
 

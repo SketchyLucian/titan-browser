@@ -14,6 +14,10 @@ url = "2.5"
 adblock = "0.13"
 ureq = { version = "2", features = ["json"] }
 
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows-core = "0.61"
+
 
 [profile.release]
 opt-level = 3

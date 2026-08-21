@@ -2,6 +2,7 @@ use crate::ipc::{Bookmark, BrowserModule, BrowserSettings, IpcIncoming, IpcTabIn
 use crate::storage::StorageManager;
 use crate::updater::{UpdateCheckResult, UpdateInfo, UpdateState, UpdateStatus};
 use crate::url_utils::normalize_or_search_url_with_engine;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::thread;
 use tao::dpi::{LogicalPosition, LogicalSize};
@@ -60,7 +61,9 @@ pub struct BrowserManager {
     pub window_size: (f64, f64),
     pub blocked_logs: Vec<crate::ipc::BlockedRequestLog>,
     pub adblock_logs: Vec<crate::ipc::BlockedRequestLog>,
-    pub adblock_manager: crate::adblock_engine::AdblockEngineManager,
+    pub adblock_manager: Rc<crate::adblock_engine::AdblockEngineManager>,
+    #[cfg(target_os = "windows")]
+    pub desktop_adblock_settings: crate::desktop_adblock::SharedDesktopAdblockSettings,
     pub update_state: UpdateState,
 }
 
@@ -72,7 +75,7 @@ impl BrowserManager {
         let settings = storage.load_settings();
         let win_size = window.inner_size().to_logical::<f64>(window.scale_factor());
 
-        let adblock_manager = crate::adblock_engine::AdblockEngineManager::new();
+        let adblock_manager = Rc::new(crate::adblock_engine::AdblockEngineManager::new());
         for rule in &settings.adblock_custom_rules {
             adblock_manager.add_custom_rule(rule.clone());
         }
@@ -88,6 +91,9 @@ impl BrowserManager {
             let enabled = settings.adblock_filter_lists.iter().any(|l| l == list);
             adblock_manager.toggle_filter_list(list, enabled);
         }
+
+        #[cfg(target_os = "windows")]
+        let desktop_adblock_settings = crate::desktop_adblock::shared_settings(&settings);
 
         Self {
             window,
@@ -106,6 +112,8 @@ impl BrowserManager {
             blocked_logs: Vec::new(),
             adblock_logs: Vec::new(),
             adblock_manager,
+            #[cfg(target_os = "windows")]
+            desktop_adblock_settings,
             update_state: UpdateState::default(),
         }
     }
@@ -382,6 +390,14 @@ impl BrowserManager {
         }
     }
 
+    #[cfg(target_os = "windows")]
+    fn sync_desktop_adblock_settings(&self) {
+        crate::desktop_adblock::update_shared_settings(
+            &self.desktop_adblock_settings,
+            &self.settings,
+        );
+    }
+
     fn build_tab(&mut self, target_url: &str) -> Tab {
         let tab_id = self.next_tab_id;
         self.next_tab_id += 1;
@@ -476,12 +492,30 @@ impl BrowserManager {
         };
 
         let webview = if let Some(ref html) = internal_html {
-            builder.with_html(html)
+            builder
+                .with_html(html)
+                .build_as_child(&*self.window)
+                .expect("Failed to create content webview for tab")
         } else {
-            builder.with_url(&normalized_url)
-        }
-        .build_as_child(&*self.window)
-        .expect("Failed to create content webview for tab");
+            let webview = builder
+                .build_as_child(&*self.window)
+                .expect("Failed to create content webview for tab");
+
+            #[cfg(target_os = "windows")]
+            if let Err(error) = crate::desktop_adblock::attach_request_blocker(
+                &webview,
+                self.adblock_manager.clone(),
+                self.desktop_adblock_settings.clone(),
+                self.proxy.clone(),
+            ) {
+                eprintln!("Failed to attach native adblock request handler: {error}");
+            }
+
+            webview
+                .load_url(&normalized_url)
+                .expect("Failed to load content URL");
+            webview
+        };
 
         let default_title = if is_newtab {
             "New Tab".to_string()
@@ -1141,6 +1175,8 @@ impl BrowserManager {
                         }
                         _ => {}
                     }
+                    #[cfg(target_os = "windows")]
+                    self.sync_desktop_adblock_settings();
                     self.storage.save_settings(&self.settings);
                     self.sync_settings_tabs();
                     self.sync_full_state();
@@ -1191,6 +1227,8 @@ impl BrowserManager {
                     if let Some(d) = crate::privacy::normalize_domain_rule(&domain) {
                         if !self.settings.adblock_blocked_domains.contains(&d) {
                             self.settings.adblock_blocked_domains.push(d);
+                            #[cfg(target_os = "windows")]
+                            self.sync_desktop_adblock_settings();
                             self.storage.save_settings(&self.settings);
                             self.sync_settings_tabs();
                         }
@@ -1201,6 +1239,8 @@ impl BrowserManager {
                         self.settings
                             .adblock_blocked_domains
                             .retain(|item| item != &d);
+                        #[cfg(target_os = "windows")]
+                        self.sync_desktop_adblock_settings();
                         self.storage.save_settings(&self.settings);
                         self.sync_settings_tabs();
                     }
@@ -1209,6 +1249,8 @@ impl BrowserManager {
                     if let Some(d) = crate::privacy::normalize_domain_rule(&domain) {
                         if !self.settings.adblock_whitelisted_domains.contains(&d) {
                             self.settings.adblock_whitelisted_domains.push(d);
+                            #[cfg(target_os = "windows")]
+                            self.sync_desktop_adblock_settings();
                             self.storage.save_settings(&self.settings);
                             self.sync_settings_tabs();
                         }
@@ -1219,6 +1261,8 @@ impl BrowserManager {
                         self.settings
                             .adblock_whitelisted_domains
                             .retain(|item| item != &d);
+                        #[cfg(target_os = "windows")]
+                        self.sync_desktop_adblock_settings();
                         self.storage.save_settings(&self.settings);
                         self.sync_settings_tabs();
                     }
@@ -1226,6 +1270,8 @@ impl BrowserManager {
                 IpcIncoming::ResetAdblockRules => {
                     self.settings.adblock_blocked_domains = crate::ipc::default_adblock_domains();
                     self.settings.adblock_whitelisted_domains.clear();
+                    #[cfg(target_os = "windows")]
+                    self.sync_desktop_adblock_settings();
                     self.storage.save_settings(&self.settings);
                     self.sync_settings_tabs();
                 }

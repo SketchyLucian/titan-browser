@@ -2266,6 +2266,8 @@ dependencies = [
  "tao",
  "ureq",
  "url",
+ "webview2-com",
+ "windows-core",
  "winres",
  "wry",
 ]
