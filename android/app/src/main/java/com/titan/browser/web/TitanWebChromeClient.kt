@@ -1,6 +1,7 @@
 package com.titan.browser.web
 
 import android.graphics.Bitmap
+import android.os.Message
 import android.view.View
 import android.webkit.GeolocationPermissions
 import android.webkit.JsPromptResult
@@ -8,13 +9,16 @@ import android.webkit.JsResult
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import com.titan.browser.model.BrowserSettings
 
 class TitanWebChromeClient(
     private val onProgressUpdate: (progress: Int) -> Unit,
     private val onTitleUpdate: (title: String) -> Unit,
     private val onFaviconUpdate: (icon: Bitmap?) -> Unit,
     private val onShowFullscreen: (view: View, callback: CustomViewCallback) -> Unit,
-    private val onHideFullscreen: () -> Unit
+    private val onHideFullscreen: () -> Unit,
+    private val settingsProvider: () -> BrowserSettings,
+    private val onCreatePopupTab: () -> WebView?
 ) : WebChromeClient() {
 
     override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -82,6 +86,23 @@ class TitanWebChromeClient(
 
     override fun onHideCustomView() {
         onHideFullscreen()
+    }
+
+    override fun onCreateWindow(
+        view: WebView?,
+        isDialog: Boolean,
+        isUserGesture: Boolean,
+        resultMsg: Message?
+    ): Boolean {
+        if (PopupPolicy.shouldBlockNewWindow(view?.url, settingsProvider())) {
+            return false
+        }
+
+        val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+        val popupWebView = onCreatePopupTab() ?: return false
+        transport.webView = popupWebView
+        resultMsg.sendToTarget()
+        return true
     }
 
     override fun onGeolocationPermissionsShowPrompt(

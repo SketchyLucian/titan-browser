@@ -184,14 +184,39 @@ const config = __TITAN_ANDROID_ADBLOCK_CONFIG__;
 
         if (blockPopups && window.open) {
             const origOpen = window.open;
+
+            function targetsCurrentBrowsingContext(target) {
+                const normalizedTarget = String(target || '').trim().toLowerCase();
+                if (normalizedTarget === '_self' || normalizedTarget === '_top' || normalizedTarget === '_parent') {
+                    return true;
+                }
+                if (!normalizedTarget || normalizedTarget === '_blank') return false;
+
+                return Array.from(document.getElementsByName(String(target))).some(element => {
+                    const tagName = String(element.tagName || '').toLowerCase();
+                    return tagName === 'iframe' || tagName === 'frame';
+                });
+            }
+
             window.open = function(url, target, features) {
-                if (!url || url === 'about:blank' || url === '' || isBlockedUrl(url)) return null;
-                try {
-                    const parsed = new URL(url, window.location.href);
-                    if (isBlockedUrl(parsed.href)) return null;
-                } catch(e) {}
+                if (!targetsCurrentBrowsingContext(target)) return null;
                 return origOpen.call(this, url, target, features);
             };
+
+            document.addEventListener('click', event => {
+                if (!event.isTrusted || event.defaultPrevented || event.button !== 0) return;
+                const target = event.target instanceof Element ? event.target : null;
+                const anchor = target?.closest('a[href][target]');
+                if (!anchor || targetsCurrentBrowsingContext(anchor.getAttribute('target'))) return;
+                anchor.setAttribute('target', '_self');
+            }, true);
+
+            document.addEventListener('submit', event => {
+                if (!event.isTrusted || event.defaultPrevented) return;
+                const form = event.target instanceof HTMLFormElement ? event.target : null;
+                if (!form || targetsCurrentBrowsingContext(form.getAttribute('target'))) return;
+                form.setAttribute('target', '_self');
+            }, true);
         }
 
         if (cosmeticFiltering) {

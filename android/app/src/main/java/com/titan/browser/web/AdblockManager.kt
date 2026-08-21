@@ -294,10 +294,10 @@ object AdblockManager {
         val normalizedSourceHost = sourceHost.lowercase()
         if (normalizedRequestHost.isBlank() || isBenchmarkOrLocalHost(normalizedRequestHost)) return false
 
-        if (isWhitelisted(normalizedSourceHost.ifBlank { normalizedRequestHost }, settings.adblockWhitelistedDomains)) {
+        if (isWhitelistedHost(normalizedSourceHost.ifBlank { normalizedRequestHost }, settings.adblockWhitelistedDomains)) {
             return false
         }
-        if (isWhitelisted(normalizedRequestHost, settings.adblockWhitelistedDomains)) {
+        if (isWhitelistedHost(normalizedRequestHost, settings.adblockWhitelistedDomains)) {
             return false
         }
 
@@ -755,7 +755,7 @@ object AdblockManager {
     private fun parseHost(url: String): String =
         runCatching { URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
 
-    private fun isWhitelisted(host: String, whitelist: List<String>): Boolean =
+    internal fun isWhitelistedHost(host: String, whitelist: List<String>): Boolean =
         host.isNotBlank() && whitelist.any { matchesDomain(host, it) }
 
     private fun matchesDomain(host: String, domain: String): Boolean {

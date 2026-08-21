@@ -61,7 +61,7 @@ cargo build --release
 
 ### Build MSI Package
 ```powershell
-& "C:\Program Files\WiX Toolset v7.0\bin\wix.exe" build wix\main.wxs -o target\TitanBrowserInstaller.msi
+& "C:\Program Files\WiX Toolset v7.0\bin\wix.exe" build -arch x64 wix\main.wxs -o target\TitanBrowserInstaller.msi
 ```
 
 ---
