@@ -133,7 +133,7 @@
 
   function checkForUpdates() {
     renderUpdateState({
-      current_version: '0.4.2',
+      current_version: '0.4.3',
       latest_version: null,
       release_url: null,
       status: 'Checking',
