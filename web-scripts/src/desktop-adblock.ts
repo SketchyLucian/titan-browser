@@ -57,7 +57,10 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
             'adPlacementRenderer',
             'linearAdSequenceRenderer',
             'playerLegacyDesktopWatchAdsRenderer',
-            'playerAdParams'
+            'playerAdParams',
+            'enforcementMessageViewModel',
+            'enforcement_message_view_model',
+            'adConfig'
         ]);
 
         function stripYouTubeAdMetadata(value, seen) {
@@ -76,6 +79,12 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
                     try { delete value[key]; } catch(e) {}
                     continue;
                 }
+                if (key === 'auxiliaryUi' && value[key] && typeof value[key] === 'object') {
+                    if (value[key].messageRenderers && value[key].messageRenderers.enforcementMessageViewModel) {
+                        try { delete value[key]; } catch(e) {}
+                        continue;
+                    }
+                }
                 stripYouTubeAdMetadata(value[key], visited);
             }
             return value;
@@ -83,7 +92,7 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
 
         function looksLikeYouTubePlayerPayload(text) {
             return typeof text === 'string' &&
-                (text.includes('"adPlacements"') || text.includes('"playerAds"') || text.includes('"adSlots"'));
+                (text.includes('"adPlacements"') || text.includes('"playerAds"') || text.includes('"adSlots"') || text.includes('enforcementMessageViewModel'));
         }
 
         if (blockVideoAds && isYouTube) {
@@ -99,7 +108,7 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
                 const originalResponseJson = Response.prototype.json;
                 Response.prototype.json = async function() {
                     const parsed = await originalResponseJson.call(this);
-                    return this.url && this.url.includes('/youtubei/v1/player')
+                    return this.url && (this.url.includes('/youtubei/v1/player') || this.url.includes('/youtubei/v1/next'))
                         ? stripYouTubeAdMetadata(parsed)
                         : parsed;
                 };
@@ -334,7 +343,7 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
                 'div[style*="z-index: 999999"]',
                 'div[style*="z-index: 99999"]',
 
-                // Video Platform Ad Overlays
+                // Video Platform Ad Overlays & Enforcement Backdrops
                 'ytd-promoted-video-renderer',
                 'ytd-promoted-sparkles-web-renderer',
                 'ytd-display-ad-renderer',
@@ -347,7 +356,12 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
                 '.ytp-ad-overlay-container',
                 '.ytp-ad-message-container',
                 '.ytp-ad-overlay-slot',
-                '.ytp-ad-action-interstitial'
+                '.ytp-ad-action-interstitial',
+                'ytd-enforcement-message-view-model',
+                'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)',
+                'tp-yt-paper-dialog:has(#feedback.ytd-enforcement-message-view-model)',
+                'tp-yt-iron-overlay-backdrop.opened',
+                'iron-overlay-backdrop.opened'
             ];
 
             if (Array.isArray(DYNAMIC_SELECTORS) && DYNAMIC_SELECTORS.length > 0) {
@@ -369,12 +383,13 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
                 document.addEventListener('DOMContentLoaded', injectAdStyle, { once: true });
             }
 
-            // Active Realtime Annoyance & Fake Robot Modal Cleaner
+            // Active Realtime Annoyance & Fake Robot Modal Cleaner (skipped on safe sites like YouTube)
             function cleanAnnoyances() {
+                if (isYouTube) return;
                 try {
-                    const modals = document.querySelectorAll('div, dialog, section');
+                    const modals = document.querySelectorAll('dialog, [role="dialog"], [class*="modal"], [class*="overlay"], [class*="captcha"], [class*="robot"], [class*="verify"], [id*="captcha"], [id*="robot"]');
                     for (const el of modals) {
-                        const text = (el.innerText || '').toLowerCase();
+                        const text = (el.textContent || '').toLowerCase();
                         if (
                             (text.includes('kein roboter') || text.includes('not a robot') || text.includes('verify you are human') || text.includes('click allow') || text.includes('klicken sie auf den button')) &&
                             (el.querySelector('img, svg, button') || el.classList.contains('modal') || (el.style && (el.style.position === 'fixed' || el.style.position === 'absolute')))
@@ -401,8 +416,13 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
                 } catch(e) {}
             }
 
+            let annoyanceTimer = 0;
             const observer = new MutationObserver(() => {
-                cleanAnnoyances();
+                if (annoyanceTimer) return;
+                annoyanceTimer = window.setTimeout(() => {
+                    annoyanceTimer = 0;
+                    cleanAnnoyances();
+                }, 250);
             });
             if (document.documentElement) {
                 observer.observe(document.documentElement, { childList: true, subtree: true });
@@ -429,6 +449,7 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
             function handleVideoAds() {
                 let foundAdUi = false;
                 try {
+                    // Skip button auto-click
                     const skipSelectors = [
                         'button.ytp-ad-skip-button',
                         'button.ytp-ad-skip-button-modern',
@@ -450,10 +471,16 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
                         }
                     }
 
-                    const adElements = document.querySelectorAll('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
-                    if (adElements.length > 0) {
+                    // Fast-forward video ad ONLY when an ad is actively playing
+                    const player = document.querySelector('#movie_player, .html5-video-player');
+                    const isAdActive = player && (
+                        player.classList.contains('ad-showing') ||
+                        player.classList.contains('ad-interrupting')
+                    );
+
+                    if (isAdActive) {
                         foundAdUi = true;
-                        const videos = document.querySelectorAll('video');
+                        const videos = player.querySelectorAll('video');
                         videos.forEach(v => {
                             if (!v) return;
                             v.muted = true;
@@ -464,6 +491,29 @@ declare const __TITAN_DESKTOP_ADBLOCK_CONFIG__: TitanDesktopAdblockConfig;
                                 v.currentTime = v.seekable.end(v.seekable.length - 1);
                             }
                         });
+                    }
+
+                    // Clean anti-adblock enforcement dialogs and dark backdrop overlays
+                    const enforcement = document.querySelector('ytd-enforcement-message-view-model, tp-yt-paper-dialog:has(#feedback.ytd-enforcement-message-view-model), tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)');
+                    const backdrop = document.querySelector('tp-yt-iron-overlay-backdrop.opened, iron-overlay-backdrop.opened');
+                    if (enforcement || backdrop) {
+                        if (enforcement) {
+                            const dialog = enforcement.closest('tp-yt-paper-dialog') || enforcement;
+                            dialog.remove();
+                        }
+                        if (backdrop) {
+                            backdrop.remove();
+                        }
+                        if (document.body) {
+                            document.body.style.removeProperty('overflow');
+                        }
+                        if (document.documentElement) {
+                            document.documentElement.style.removeProperty('overflow');
+                        }
+                        const video = document.querySelector('video');
+                        if (video && video.paused && !isAdActive) {
+                            video.play().catch(() => {});
+                        }
                     }
                 } catch(e) {}
                 return foundAdUi;

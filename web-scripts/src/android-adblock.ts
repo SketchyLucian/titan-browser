@@ -416,10 +416,15 @@ const config = __TITAN_ANDROID_ADBLOCK_CONFIG__;
                         }
                     }
 
-                    const adElements = document.querySelectorAll('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
-                    if (adElements.length > 0) {
+                    const player = document.querySelector('#movie_player, .html5-video-player');
+                    const isAdActive = player && (
+                        player.classList.contains('ad-showing') ||
+                        player.classList.contains('ad-interrupting')
+                    );
+
+                    if (isAdActive) {
                         foundAdUi = true;
-                        const videos = document.querySelectorAll('video');
+                        const videos = player.querySelectorAll('video');
                         videos.forEach(v => {
                             if (v && !isNaN(v.duration) && v.duration > 0) {
                                 v.muted = true;
@@ -427,6 +432,20 @@ const config = __TITAN_ANDROID_ADBLOCK_CONFIG__;
                                 v.currentTime = v.duration;
                             }
                         });
+                    }
+
+                    const enforcement = document.querySelector('ytd-enforcement-message-view-model, tp-yt-paper-dialog:has(#feedback.ytd-enforcement-message-view-model), tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)');
+                    const backdrop = document.querySelector('tp-yt-iron-overlay-backdrop.opened, iron-overlay-backdrop.opened');
+                    if (enforcement || backdrop) {
+                        if (enforcement) {
+                            const dialog = enforcement.closest('tp-yt-paper-dialog') || enforcement;
+                            dialog.remove();
+                        }
+                        if (backdrop) backdrop.remove();
+                        if (document.body) document.body.style.removeProperty('overflow');
+                        if (document.documentElement) document.documentElement.style.removeProperty('overflow');
+                        const video = document.querySelector('video');
+                        if (video && video.paused && !isAdActive) video.play().catch(() => {});
                     }
                 } catch(e) {}
                 return foundAdUi;
