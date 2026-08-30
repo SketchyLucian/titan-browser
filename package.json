@@ -10,7 +10,8 @@
     "verify:android-popups": "node scripts/verify-android-popup-policy.mjs",
     "verify:desktop-download": "node scripts/verify-desktop-download.mjs",
     "verify:desktop-popups": "node scripts/verify-desktop-popup.mjs",
-    "verify:desktop-session": "node scripts/verify-desktop-session.mjs"
+    "verify:desktop-session": "node scripts/verify-desktop-session.mjs",
+    "verify:desktop-extensions": "node scripts/verify-desktop-extensions.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

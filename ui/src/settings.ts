@@ -38,17 +38,20 @@
     const isThemes = tabName === 'themes';
     const isPrivacy = tabName === 'privacy';
     const isAdblock = tabName === 'adblock';
-    const isGeneral = !isThemes && !isPrivacy && !isAdblock;
+    const isExtensions = tabName === 'extensions';
+    const isGeneral = !isThemes && !isPrivacy && !isAdblock && !isExtensions;
 
     const viewGeneral = document.getElementById('viewGeneral');
     const viewThemes = document.getElementById('viewThemes');
     const viewPrivacy = document.getElementById('viewPrivacy');
     const viewAdblock = document.getElementById('viewAdblock');
+    const viewExtensions = document.getElementById('viewExtensions');
 
     const tabBtnGeneral = document.getElementById('tabBtnGeneral');
     const tabBtnThemes = document.getElementById('tabBtnThemes');
     const tabBtnPrivacy = document.getElementById('tabBtnPrivacy');
     const tabBtnAdblock = document.getElementById('tabBtnAdblock');
+    const tabBtnExtensions = document.getElementById('tabBtnExtensions');
 
     const headerTitle = document.getElementById('headerTitle');
     const headerSubtitle = document.getElementById('headerSubtitle');
@@ -56,11 +59,13 @@
     const headerIconThemes = document.getElementById('headerIconThemes');
     const headerIconPrivacy = document.getElementById('headerIconPrivacy');
     const headerIconAdblock = document.getElementById('headerIconAdblock');
+    const headerIconExtensions = document.getElementById('headerIconExtensions');
 
     if (viewGeneral) viewGeneral.classList.toggle('active', isGeneral);
     if (viewThemes) viewThemes.classList.toggle('active', isThemes);
     if (viewPrivacy) viewPrivacy.classList.toggle('active', isPrivacy);
     if (viewAdblock) viewAdblock.classList.toggle('active', isAdblock);
+    if (viewExtensions) viewExtensions.classList.toggle('active', isExtensions);
 
     animateViewEntry(
       (isThemes
@@ -69,18 +74,22 @@
           ? viewPrivacy
           : isAdblock
             ? viewAdblock
-            : viewGeneral) as HTMLElement | null
+            : isExtensions
+              ? viewExtensions
+              : viewGeneral) as HTMLElement | null
     );
 
     if (tabBtnGeneral) tabBtnGeneral.classList.toggle('active', isGeneral);
     if (tabBtnThemes) tabBtnThemes.classList.toggle('active', isThemes);
     if (tabBtnPrivacy) tabBtnPrivacy.classList.toggle('active', isPrivacy);
     if (tabBtnAdblock) tabBtnAdblock.classList.toggle('active', isAdblock);
+    if (tabBtnExtensions) tabBtnExtensions.classList.toggle('active', isExtensions);
 
     if (headerTitle) {
       if (isThemes) headerTitle.textContent = 'Themes & Appearance';
       else if (isPrivacy) headerTitle.textContent = 'Privacy & Security';
       else if (isAdblock) headerTitle.textContent = 'AdBlock & Shields';
+      else if (isExtensions) headerTitle.textContent = 'Extensions & Add-ons';
       else headerTitle.textContent = 'Settings';
     }
 
@@ -91,6 +100,8 @@
         headerSubtitle.textContent = 'Tracker blocking, privacy signals, fingerprinting controls, and local data';
       } else if (isAdblock) {
         headerSubtitle.textContent = 'Shield controls, video ad auto-skip, popup defense, and custom domain filters';
+      } else if (isExtensions) {
+        headerSubtitle.textContent = 'Manage, install, and configure Chromium extensions and add-ons';
       } else {
         headerSubtitle.textContent = 'Manage browser preferences, search, and system settings';
       }
@@ -100,6 +111,7 @@
     if (headerIconThemes) headerIconThemes.style.display = isThemes ? 'block' : 'none';
     if (headerIconPrivacy) headerIconPrivacy.style.display = isPrivacy ? 'block' : 'none';
     if (headerIconAdblock) headerIconAdblock.style.display = isAdblock ? 'block' : 'none';
+    if (headerIconExtensions) headerIconExtensions.style.display = isExtensions ? 'block' : 'none';
   }
 
   function selectTheme(themeId: string) {
@@ -952,7 +964,188 @@
     sendIpc({ type: 'ClearAdblockLogs' });
   }
 
-  // Update window.initSettings to populate blocklists, filter subscriptions, custom rules, stats & logs
+  // ==========================================================================
+  // Extensions Management Logic
+  // ==========================================================================
+  let currentExtensions: ExtensionInfo[] = [];
+
+  function renderExtensionsList(searchFilter = '') {
+    const grid = document.getElementById('extensionsGrid');
+    const countBadge = document.getElementById('extensionsCountBadge');
+    if (!grid) return;
+
+    const filter = searchFilter.toLowerCase().trim();
+    const filtered = currentExtensions.filter(
+      (ext) =>
+        !filter ||
+        ext.name.toLowerCase().includes(filter) ||
+        ext.id.toLowerCase().includes(filter) ||
+        ext.description.toLowerCase().includes(filter)
+    );
+
+    if (countBadge) {
+      countBadge.textContent = `${currentExtensions.length} extension${currentExtensions.length === 1 ? '' : 's'}`;
+    }
+
+    grid.innerHTML = '';
+
+    if (filtered.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.gridColumn = '1 / -1';
+      empty.style.textAlign = 'center';
+      empty.style.padding = '36px 16px';
+      empty.style.color = 'var(--text-muted)';
+      empty.style.fontSize = '13px';
+      empty.textContent =
+        currentExtensions.length === 0
+          ? 'No extensions installed yet. Use the box above or visit the Chrome Web Store / Edge Add-ons to install.'
+          : 'No extensions match your search.';
+      grid.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach((ext) => {
+      const card = document.createElement('div');
+      card.className = 'ext-card';
+
+      const header = document.createElement('div');
+      header.className = 'ext-card-header';
+
+      const icon = document.createElement('img');
+      icon.className = 'ext-card-icon';
+      icon.src =
+        ext.icon ||
+        'data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" fill="none" stroke="%234e7cf6" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>';
+
+      const titleGroup = document.createElement('div');
+      titleGroup.className = 'ext-card-title-group';
+
+      const name = document.createElement('div');
+      name.className = 'ext-card-name';
+      name.textContent = ext.name;
+      name.title = ext.name;
+
+      const meta = document.createElement('div');
+      meta.className = 'ext-card-meta';
+
+      const version = document.createElement('span');
+      version.textContent = `v${ext.version}`;
+
+      const badge = document.createElement('span');
+      const srcLower = (ext.source || '').toLowerCase();
+      badge.className = `ext-badge ${srcLower === 'chrome' ? 'chrome' : srcLower === 'edge' ? 'edge' : 'unpacked'}`;
+      badge.textContent = srcLower === 'chrome' ? 'Chrome Store' : srcLower === 'edge' ? 'Edge Add-ons' : 'Unpacked';
+
+      meta.appendChild(version);
+      meta.appendChild(badge);
+
+      titleGroup.appendChild(name);
+      titleGroup.appendChild(meta);
+
+      header.appendChild(icon);
+      header.appendChild(titleGroup);
+
+      const desc = document.createElement('div');
+      desc.className = 'ext-card-desc';
+      desc.textContent = ext.description || 'No description provided.';
+      desc.title = ext.description || '';
+
+      const actions = document.createElement('div');
+      actions.className = 'ext-card-actions';
+
+      const btnGroup = document.createElement('div');
+      btnGroup.className = 'ext-btn-group';
+      if (ext.popup_page) {
+        const popupBtn = document.createElement('button');
+        popupBtn.className = 'ext-action-btn';
+        popupBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg> Popup`;
+        popupBtn.title = 'Open extension popup interface';
+        popupBtn.addEventListener('click', () => {
+          sendIpc({ type: 'OpenExtensionPopup', id: ext.id });
+        });
+        btnGroup.appendChild(popupBtn);
+      }
+
+      if (ext.options_page) {
+        const optionsBtn = document.createElement('button');
+        optionsBtn.className = 'ext-action-btn';
+        optionsBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg> Options`;
+        optionsBtn.addEventListener('click', () => {
+          sendIpc({ type: 'OpenExtensionOptions', id: ext.id });
+        });
+        btnGroup.appendChild(optionsBtn);
+      }
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'ext-action-btn danger';
+      removeBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg> Remove`;
+      removeBtn.addEventListener('click', () => {
+        if (confirm(`Are you sure you want to remove "${ext.name}"?`)) {
+          sendIpc({ type: 'UninstallExtension', id: ext.id });
+          currentExtensions = currentExtensions.filter((e) => e.id !== ext.id);
+          renderExtensionsList(searchFilter);
+        }
+      });
+      btnGroup.appendChild(removeBtn);
+
+      const toggleLabel = document.createElement('label');
+      toggleLabel.className = 'switch';
+      const toggleInput = document.createElement('input');
+      toggleInput.type = 'checkbox';
+      toggleInput.checked = ext.enabled;
+      toggleInput.addEventListener('change', () => {
+        ext.enabled = toggleInput.checked;
+        sendIpc({ type: 'ToggleExtension', id: ext.id, enabled: ext.enabled });
+      });
+      const slider = document.createElement('span');
+      slider.className = 'slider';
+
+      toggleLabel.appendChild(toggleInput);
+      toggleLabel.appendChild(slider);
+
+      actions.appendChild(btnGroup);
+      actions.appendChild(toggleLabel);
+
+      card.appendChild(header);
+      card.appendChild(desc);
+      card.appendChild(actions);
+
+      grid.appendChild(card);
+    });
+  }
+
+  function installExtensionFromInput() {
+    const input = document.getElementById('extensionInstallInput') as HTMLInputElement | null;
+    const btn = document.getElementById('extensionInstallBtn') as HTMLButtonElement | null;
+    if (!input) return;
+
+    const val = input.value.trim();
+    if (!val) return;
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Installing...';
+    }
+
+    sendIpc({ type: 'InstallExtension', id_or_url: val });
+    input.value = '';
+
+    setTimeout(() => {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Install Extension`;
+      }
+    }, 2500);
+  }
+
+  function loadUnpackedExtensionPrompt() {
+    const folderPath = prompt('Enter the absolute path to the unpacked extension directory:\n(Contains manifest.json)');
+    if (folderPath && folderPath.trim()) {
+      sendIpc({ type: 'LoadUnpackedExtension', path: folderPath.trim() });
+    }
+  }
+
+  // Update window.initSettings to populate blocklists, filter subscriptions, custom rules, stats & logs, extensions
   const origInitSettings = window.initSettings;
   window.initSettings = function (state: SettingsInitState) {
     if (origInitSettings) origInitSettings(state);
@@ -1006,7 +1199,61 @@
       renderAdblockActivityLogs();
       renderAdblockStats();
     }
+
+    if (Array.isArray(state.extensions)) {
+      currentExtensions = [...state.extensions];
+      renderExtensionsList();
+    }
   };
+
+  // Wire event listeners on load
+  document.addEventListener('DOMContentLoaded', () => {
+    const tabBtnExt = document.getElementById('tabBtnExtensions');
+    if (tabBtnExt) {
+      tabBtnExt.addEventListener('click', () => switchView('extensions'));
+    }
+
+    const installBtn = document.getElementById('extensionInstallBtn');
+    if (installBtn) {
+      installBtn.addEventListener('click', installExtensionFromInput);
+    }
+
+    const installInput = document.getElementById('extensionInstallInput');
+    if (installInput) {
+      installInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          installExtensionFromInput();
+        }
+      });
+    }
+
+    const searchInput = document.getElementById('extensionSearchInput') as HTMLInputElement | null;
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        renderExtensionsList(searchInput.value);
+      });
+    }
+
+    const chromeBtn = document.getElementById('openChromeStoreBtn');
+    if (chromeBtn) {
+      chromeBtn.addEventListener('click', () => {
+        sendIpc({ type: 'NewTab', url: 'https://chromewebstore.google.com' });
+      });
+    }
+
+    const edgeBtn = document.getElementById('openEdgeStoreBtn');
+    if (edgeBtn) {
+      edgeBtn.addEventListener('click', () => {
+        sendIpc({ type: 'NewTab', url: 'https://microsoftedge.microsoft.com/addons' });
+      });
+    }
+
+    const loadUnpackedBtn = document.getElementById('loadUnpackedExtensionBtn');
+    if (loadUnpackedBtn) {
+      loadUnpackedBtn.addEventListener('click', loadUnpackedExtensionPrompt);
+    }
+  });
 
   function initializeFromEmbeddedState() {
     const stateElement = document.getElementById('titan-settings-state');
@@ -1038,4 +1285,6 @@
   (window as unknown as Record<string, unknown>).addAdblockWhitelist = addAdblockWhitelist;
   (window as unknown as Record<string, unknown>).removeAdblockWhitelist = removeAdblockWhitelist;
   (window as unknown as Record<string, unknown>).clearAdblockLogs = clearAdblockLogs;
+  (window as unknown as Record<string, unknown>).installExtensionFromInput = installExtensionFromInput;
+  (window as unknown as Record<string, unknown>).loadUnpackedExtensionPrompt = loadUnpackedExtensionPrompt;
 })();

@@ -132,6 +132,12 @@
             <path d="M5 21h14"></path>
           </svg>
         </button>
+        <div class="toolbar-extensions-list" id="toolbarExtensionsList"></div>
+        <button class="action-btn" id="extensionsBtn" title="Extensions & Add-ons">
+          <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+            <path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"></path>
+          </svg>
+        </button>
         <button class="action-btn" id="privateTabBtn" title="New Private Tab (Ctrl+Shift+N)">
           <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
             <rect x="5" y="10" width="14" height="11" rx="2"></rect>
@@ -144,6 +150,30 @@
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
           </svg>
         </button>
+      </div>
+    </div>
+
+    <!-- Extensions Popup Dropdown Menu -->
+    <div class="extensions-dropdown" id="extensionsDropdown" style="display: none;">
+      <div class="extensions-dropdown-header" id="extDropdownHeader">
+        <div class="ext-dropdown-title-row">
+          <span class="extensions-dropdown-title" id="extDropdownTitle">Extensions</span>
+          <button class="ext-dropdown-close-btn" id="closeExtDropdownBtn" title="Close Popup">
+            <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <button class="extensions-manage-btn" id="manageExtensionsBtn" title="Manage Extensions (titan://extensions)">Manage Extensions</button>
+      </div>
+      <div class="extensions-dropdown-body" id="extensionsDropdownBody">
+        <div class="extensions-dropdown-list" id="extensionsDropdownList">
+          <!-- Extensions list rendered dynamically -->
+        </div>
+        <div class="extension-detail-view" id="extensionDetailView" style="display: none;">
+          <!-- Specific extension interactive popup UI -->
+        </div>
       </div>
     </div>
 

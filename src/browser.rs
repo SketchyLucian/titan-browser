@@ -70,6 +70,9 @@ fn desktop_adblock_script(
     settings: &BrowserSettings,
     target_url: &str,
 ) -> String {
+    if !settings.adblock_enabled {
+        return String::new();
+    }
     let (dynamic_selectors, dynamic_scriptlet) = manager.get_cosmetic_resources(target_url);
     render_typescript(
         include_str!("../web-scripts/dist/desktop-adblock.js"),
@@ -84,6 +87,17 @@ fn desktop_adblock_script(
             "blockedDomains": settings.adblock_blocked_domains,
             "dynamicSelectors": dynamic_selectors,
             "scriptletCode": dynamic_scriptlet,
+        }),
+    )
+}
+
+fn desktop_extensions_script(extensions: &[crate::extensions::ExtensionInfo]) -> String {
+    let installed_ids: Vec<String> = extensions.iter().map(|e| e.id.clone()).collect();
+    render_typescript(
+        include_str!("../web-scripts/dist/desktop-extensions.js"),
+        "__TITAN_DESKTOP_EXTENSIONS_CONFIG__",
+        serde_json::json!({
+            "installedIds": installed_ids,
         }),
     )
 }
@@ -125,7 +139,7 @@ fn popup_target_url(requested_url: &str) -> Option<String> {
     }
 
     let parsed = url::Url::parse(requested_url).ok()?;
-    matches!(parsed.scheme(), "http" | "https").then(|| parsed.into())
+    matches!(parsed.scheme(), "http" | "https" | "chrome-extension").then(|| parsed.into())
 }
 
 fn is_allowed_content_ipc(message: &str, own_tab_id: u32) -> bool {
@@ -143,6 +157,10 @@ fn is_allowed_content_ipc(message: &str, own_tab_id: u32) -> bool {
         | IpcIncoming::OpenHistory
         | IpcIncoming::OpenDownloads => true,
         IpcIncoming::NewPrivateTab => true,
+        IpcIncoming::InstallExtension { .. } => true,
+        IpcIncoming::OpenExtensionPopup { .. } => true,
+        IpcIncoming::OpenExtensionOptions { .. } => true,
+        IpcIncoming::SetHeaderExpanded { .. } => true,
         IpcIncoming::TabStateUpdate { tab_id, .. } => tab_id == Some(own_tab_id),
         IpcIncoming::ReportBlockedRequest { .. } | IpcIncoming::ReportBlockedAd { .. } => true,
         _ => false,
@@ -182,6 +200,8 @@ pub struct BrowserManager {
     pub update_state: UpdateState,
     pub history: Vec<HistoryEntry>,
     pub downloads: Vec<DownloadRecord>,
+    pub extensions: Vec<crate::extensions::ExtensionInfo>,
+    pub header_expanded: bool,
     next_download_id: u64,
     pending_popup_tabs: Rc<RefCell<Vec<Tab>>>,
     is_restoring_session: bool,
@@ -194,6 +214,7 @@ impl BrowserManager {
         let modules = storage.load_modules();
         let settings = storage.load_settings();
         let history = storage.load_history();
+        let extensions = storage.load_extensions();
         let mut downloads = storage.load_downloads();
         for download in &mut downloads {
             if download.status == "downloading" {
@@ -251,6 +272,8 @@ impl BrowserManager {
             update_state: UpdateState::default(),
             history,
             downloads,
+            extensions,
+            header_expanded: false,
             next_download_id,
             pending_popup_tabs: Rc::new(RefCell::new(Vec::new())),
             is_restoring_session: false,
@@ -258,7 +281,9 @@ impl BrowserManager {
     }
 
     pub fn get_header_height(&self) -> f64 {
-        if self.settings.show_bookmarks_bar && !self.bookmarks.is_empty() {
+        if self.header_expanded {
+            460.0
+        } else if self.settings.show_bookmarks_bar && !self.bookmarks.is_empty() {
             HEADER_HEIGHT_EXPANDED
         } else {
             HEADER_HEIGHT_COLLAPSED
@@ -280,9 +305,13 @@ impl BrowserManager {
         let proxy_clone = self.proxy.clone();
         let html_content = Self::get_chrome_html();
 
-        // Each view needs its own child window. A root webview installs a shared
-        // parent focus/resize hook, which is unsafe when several views coexist.
-        let header = WebViewBuilder::new()
+        #[allow(unused_mut)]
+        let mut header_builder = WebViewBuilder::new();
+        #[cfg(target_os = "windows")]
+        {
+            header_builder = header_builder.with_browser_extensions_enabled(true);
+        }
+        let header = header_builder
             .with_bounds(header_bounds)
             .with_background_color((r, g, b, a))
             .with_transparent(false)
@@ -294,6 +323,15 @@ impl BrowserManager {
             .expect("Failed to create header webview");
 
         self.header_webview = Some(header);
+
+        #[cfg(target_os = "windows")]
+        if let Some(ref view) = self.header_webview {
+            for ext in &self.extensions {
+                if ext.enabled && std::path::Path::new(&ext.path).exists() {
+                    let _ = crate::desktop_data::install_browser_extension(view, &ext.path);
+                }
+            }
+        }
 
         self.restore_session();
         if let Some(url) = initial_url.and_then(popup_target_url) {
@@ -339,6 +377,7 @@ impl BrowserManager {
             "adblock_custom_rules": self.adblock_manager.get_custom_rules(),
             "mandatory_blocked_domains": crate::privacy::BLOCKED_TELEMETRY_DOMAINS,
             "update_state": self.update_state,
+            "extensions": &self.extensions,
             "active_section": active_section,
         }))
         .unwrap_or_else(|_| "{}".into())
@@ -435,12 +474,14 @@ impl BrowserManager {
             || url == "titan://adblock"
             || url == "titan://shields"
             || url == "titan://modules"
+            || url == "titan://extensions"
             || url == "titan://darkmode"
             || url == "about:settings"
             || url == "about:themes"
             || url == "about:privacy"
             || url == "about:adblock"
             || url == "about:shields"
+            || url == "about:extensions"
     }
 
     pub fn is_history_url(url: &str) -> bool {
@@ -592,6 +633,7 @@ impl BrowserManager {
             || target_url == "about:adblock"
             || target_url == "titan://shields"
             || target_url == "about:shields";
+        let is_extensions = target_url == "titan://extensions" || target_url == "about:extensions";
 
         let normalized_url = if is_newtab {
             "titan://newtab".to_string()
@@ -619,10 +661,12 @@ impl BrowserManager {
         let theme_script = self.get_theme_injection_script();
         let privacy_script = self.get_privacy_injection_script();
         let adblock_script = self.get_adblock_injection_script(&normalized_url);
+        let extensions_script = desktop_extensions_script(&self.extensions);
         let popup_theme_script = theme_script.clone();
         let popup_privacy_script = privacy_script.clone();
         let popup_settings = self.settings.clone();
         let popup_adblock_manager = self.adblock_manager.clone();
+        let popup_extensions = self.extensions.clone();
         let popup_native_adblock_settings = self.desktop_adblock_settings.clone();
         let popup_tabs = self.pending_popup_tabs.clone();
         let popup_next_tab_id = self.next_tab_id.clone();
@@ -639,6 +683,7 @@ impl BrowserManager {
             theme_script,
             privacy_script,
             adblock_script,
+            extensions_script,
         ]
         .join("\n");
 
@@ -646,7 +691,13 @@ impl BrowserManager {
         let bg_color = self.get_theme_background_color();
 
         // Tab activation owns focus; a hidden tab must not request it at creation.
-        let builder = WebViewBuilder::new()
+        #[allow(unused_mut)]
+        let mut builder = WebViewBuilder::new();
+        #[cfg(target_os = "windows")]
+        {
+            builder = builder.with_browser_extensions_enabled(true);
+        }
+        let builder = builder
             .with_incognito(is_private)
             .with_bounds(content_bounds)
             .with_background_color(bg_color)
@@ -683,11 +734,13 @@ impl BrowserManager {
                 );
                 let popup_adblock_script =
                     desktop_adblock_script(&popup_adblock_manager, &popup_settings, &popup_url);
+                let popup_extensions_script = desktop_extensions_script(&popup_extensions);
                 let popup_init_script = [
                     popup_tab_state_script,
                     popup_theme_script.clone(),
                     popup_privacy_script.clone(),
                     popup_adblock_script,
+                    popup_extensions_script,
                 ]
                 .join("\n");
 
@@ -696,16 +749,21 @@ impl BrowserManager {
                 let nested_popup_proxy = popup_proxy.clone();
                 let download_started_proxy = popup_proxy.clone();
                 let download_completed_proxy = popup_proxy.clone();
-                let popup_webview =
-                    WebViewBuilder::new()
-                        .with_incognito(is_private)
-                        .with_environment(features.opener.environment)
-                        .with_bounds(content_bounds)
-                        .with_background_color(bg_color)
-                        .with_transparent(false)
-                        .with_visible(false)
-                        .with_focused(false)
-                        .with_initialization_script(&popup_init_script)
+                #[allow(unused_mut)]
+                let mut popup_builder = WebViewBuilder::new();
+                #[cfg(target_os = "windows")]
+                {
+                    popup_builder = popup_builder.with_browser_extensions_enabled(true);
+                }
+                let popup_webview = popup_builder
+                    .with_incognito(is_private)
+                    .with_environment(features.opener.environment)
+                    .with_bounds(content_bounds)
+                    .with_background_color(bg_color)
+                    .with_transparent(false)
+                    .with_visible(false)
+                    .with_focused(false)
+                    .with_initialization_script(&popup_init_script)
                         .with_ipc_handler(move |request| {
                             let message = request.body();
                             if is_allowed_content_ipc(message, popup_tab_id) {
@@ -812,6 +870,8 @@ impl BrowserManager {
                 "privacy"
             } else if is_adblock {
                 "adblock"
+            } else if is_extensions {
+                "extensions"
             } else {
                 "general"
             };
@@ -1182,6 +1242,7 @@ impl BrowserManager {
                     "themes" => "titan://themes",
                     "privacy" => "titan://privacy",
                     "adblock" => "titan://adblock",
+                    "extensions" => "titan://extensions",
                     _ => "titan://settings",
                 };
                 self.create_tab(target_url);
@@ -1193,6 +1254,7 @@ impl BrowserManager {
                 "themes" => "Themes",
                 "privacy" => "Privacy & Security",
                 "adblock" => "AdBlock & Shields",
+                "extensions" => "Extensions & Add-ons",
                 _ => "Settings",
             }
             .into();
@@ -1464,6 +1526,7 @@ impl BrowserManager {
                 "adblock_custom_rules": self.adblock_manager.get_custom_rules(),
                 "mandatory_blocked_domains": crate::privacy::BLOCKED_TELEMETRY_DOMAINS,
                 "update_state": self.update_state,
+                "extensions": &self.extensions,
             },
         }));
         for tab in &self.tabs {
@@ -2068,7 +2131,114 @@ impl BrowserManager {
                 IpcIncoming::OpenThemes => self.open_settings_view("themes"),
                 IpcIncoming::OpenPrivacy => self.open_settings_view("privacy"),
                 IpcIncoming::OpenAdblock => self.open_settings_view("adblock"),
+                IpcIncoming::OpenExtensions => self.open_settings_view("extensions"),
                 IpcIncoming::OpenSettings => self.open_settings_view("general"),
+                IpcIncoming::InstallExtension { id_or_url, source } => {
+                    match crate::extensions::download_and_install_extension(
+                        &id_or_url,
+                        source.as_deref(),
+                    ) {
+                        Ok(ext) => {
+                            #[cfg(target_os = "windows")]
+                            if let Some(profile_view) = self.header_webview.as_ref().or_else(|| {
+                                self.tabs
+                                    .iter()
+                                    .find(|tab| !tab.is_private)
+                                    .map(|tab| &tab.webview)
+                            }) {
+                                if let Err(error) = crate::desktop_data::install_browser_extension(
+                                    profile_view,
+                                    &ext.path,
+                                ) {
+                                    eprintln!("Could not dynamically register extension into WebView2: {error}");
+                                }
+                            }
+
+                            self.extensions.retain(|e| e.id != ext.id);
+                            self.extensions.push(ext);
+                            self.storage.save_extensions(&self.extensions);
+                            self.sync_settings_tabs();
+                            self.sync_full_state();
+                        }
+                        Err(err) => {
+                            eprintln!("Failed to install extension: {err}");
+                        }
+                    }
+                }
+                IpcIncoming::UninstallExtension { id } => {
+                    self.extensions.retain(|e| e.id != id);
+                    let ext_dir = crate::extensions::get_extensions_dir().join(&id);
+                    let _ = std::fs::remove_dir_all(ext_dir);
+                    self.storage.save_extensions(&self.extensions);
+                    self.sync_settings_tabs();
+                    self.sync_full_state();
+                }
+                IpcIncoming::ToggleExtension { id, enabled } => {
+                    if let Some(ext) = self.extensions.iter_mut().find(|e| e.id == id) {
+                        ext.enabled = enabled;
+                    }
+                    self.storage.save_extensions(&self.extensions);
+                    self.sync_settings_tabs();
+                    self.sync_full_state();
+                }
+                IpcIncoming::LoadUnpackedExtension { path } => {
+                    match crate::extensions::load_unpacked_extension(&path) {
+                        Ok(ext) => {
+                            #[cfg(target_os = "windows")]
+                            if let Some(profile_view) = self.header_webview.as_ref().or_else(|| {
+                                self.tabs
+                                    .iter()
+                                    .find(|tab| !tab.is_private)
+                                    .map(|tab| &tab.webview)
+                            }) {
+                                if let Err(error) = crate::desktop_data::install_browser_extension(
+                                    profile_view,
+                                    &ext.path,
+                                ) {
+                                    eprintln!("Could not dynamically register extension into WebView2: {error}");
+                                }
+                            }
+
+                            self.extensions.retain(|e| e.id != ext.id);
+                            self.extensions.push(ext);
+                            self.storage.save_extensions(&self.extensions);
+                            self.sync_settings_tabs();
+                            self.sync_full_state();
+                        }
+                        Err(err) => {
+                            eprintln!("Failed to load unpacked extension: {err}");
+                        }
+                    }
+                }
+                IpcIncoming::OpenExtensionOptions { id } => {
+                    if let Some(ext) = self.extensions.iter().find(|e| e.id == id) {
+                        let page = ext.options_page.as_deref().or(ext.popup_page.as_deref());
+                        if let Some(options_page) = page {
+                            let url = format!("chrome-extension://{}/{}", ext.id, options_page);
+                            self.create_tab(&url);
+                        }
+                    }
+                }
+                IpcIncoming::OpenExtensionPopup { id } => {
+                    if let Some(ext) = self.extensions.iter().find(|e| e.id == id) {
+                        let page = ext.popup_page.as_deref().or(ext.options_page.as_deref());
+                        if let Some(popup_page) = page {
+                            let url = format!("chrome-extension://{}/{}", ext.id, popup_page);
+                            self.create_tab(&url);
+                        }
+                    }
+                }
+                IpcIncoming::SetHeaderExpanded { expanded } => {
+                    self.header_expanded = expanded;
+                    let (width, _) = self.get_current_window_size();
+                    let header_height = self.get_header_height();
+                    if let Some(ref header) = self.header_webview {
+                        let _ = header.set_bounds(Rect {
+                            position: LogicalPosition::new(0.0, 0.0).into(),
+                            size: LogicalSize::new(width, header_height).into(),
+                        });
+                    }
+                }
                 IpcIncoming::OpenHistory => self.open_history(),
                 IpcIncoming::ClearHistory => self.clear_history(),
                 IpcIncoming::OpenDownloads => self.open_downloads(),
@@ -2149,6 +2319,7 @@ impl BrowserManager {
                 "active_tab_id": self.active_tab_id,
                 "bookmarks": &self.bookmarks,
                 "settings": &self.settings,
+                "extensions": &self.extensions,
                 "zoom": self.zoom,
             });
 

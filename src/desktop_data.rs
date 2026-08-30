@@ -43,6 +43,39 @@ pub fn clear_browsing_data(
     unsafe { profile.ClearBrowsingData(kinds, &handler) }.map_err(|error| error.to_string())
 }
 
+pub fn install_browser_extension(
+    webview: &WebView,
+    extension_folder_path: &str,
+) -> Result<(), String> {
+    let controller = webview.controller();
+    let core = unsafe { controller.CoreWebView2() }.map_err(|error| error.to_string())?;
+    let profile = core
+        .cast::<ICoreWebView2_13>()
+        .and_then(|core| unsafe { core.Profile() })
+        .and_then(|profile| profile.cast::<ICoreWebView2Profile7>())
+        .map_err(|error| error.to_string())?;
+
+    let path_wide = windows_core::HSTRING::from(extension_folder_path);
+    let handler = webview2_com::ProfileAddBrowserExtensionCompletedHandler::create(Box::new(
+        |result, _ext| {
+            if let Err(e) = result {
+                eprintln!("AddBrowserExtension error: {e}");
+            } else {
+                println!("Extension successfully added to WebView2 profile dynamically!");
+            }
+            Ok(())
+        },
+    ));
+
+    unsafe {
+        profile.AddBrowserExtension(
+            windows_core::PCWSTR(path_wide.as_ptr()),
+            &handler,
+        )
+    }
+    .map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::selected_data_kinds;

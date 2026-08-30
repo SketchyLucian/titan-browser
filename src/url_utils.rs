@@ -27,6 +27,9 @@ pub fn normalize_or_search_url_with_engine(input: &str, engine: &str) -> String 
         || trimmed.starts_with("about:")
         || trimmed.starts_with("titan://")
         || trimmed.starts_with("chrome://")
+        || trimmed.starts_with("chrome-extension://")
+        || trimmed.starts_with("edge-extension://")
+        || trimmed.starts_with("extension://")
     {
         return trimmed.to_string();
     }
@@ -191,6 +194,10 @@ mod tests {
         assert_eq!(
             normalize_or_search_url("localhost:3000"),
             "https://localhost:3000"
+        );
+        assert_eq!(
+            normalize_or_search_url("chrome-extension://odfafepnkmbhccpbejgmiehpchacaeak/popup-fenix.html"),
+            "chrome-extension://odfafepnkmbhccpbejgmiehpchacaeak/popup-fenix.html"
         );
     }
 

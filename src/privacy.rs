@@ -56,30 +56,14 @@ pub const BLOCKED_TELEMETRY_DOMAINS: &[&str] = &[
 ];
 
 pub fn webview2_browser_args() -> String {
-    let resolver_rules = BLOCKED_TELEMETRY_DOMAINS
-        .iter()
-        .flat_map(|domain| {
-            [
-                format!("MAP {domain} 0.0.0.0"),
-                format!("MAP *.{domain} 0.0.0.0"),
-            ]
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-
     [
         "--disable-features=Translate,OptimizationHints,MediaRouter,InterestFeedContentSuggestions,AttributionReporting,PrivacySandboxAdsAPIs,TopicsAPI,InterestGroupStorage,Fledge,SharedStorageAPI,PrivateAggregationApi,ReportingAPI".to_string(),
-        "--disable-background-networking".into(),
         "--disable-domain-reliability".into(),
-        "--disable-component-update".into(),
         "--disable-sync".into(),
         "--disable-breakpad".into(),
         "--no-report-upload".into(),
         "--metrics-recording-only".into(),
-        "--disable-client-side-phishing-detection".into(),
-        "--disable-default-apps".into(),
         "--no-pings".into(),
-        format!("--host-resolver-rules={resolver_rules}"),
     ]
     .join(" ")
 }
@@ -129,11 +113,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn browser_args_block_exact_and_subdomain_hosts() {
+    fn browser_args_contain_privacy_flags() {
         let args = webview2_browser_args();
-        assert!(args.contains("MAP google-analytics.com 0.0.0.0"));
-        assert!(args.contains("MAP *.google-analytics.com 0.0.0.0"));
         assert!(args.contains("--no-report-upload"));
+        assert!(args.contains("--no-pings"));
     }
 
     #[test]

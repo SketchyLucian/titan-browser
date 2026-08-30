@@ -82,6 +82,21 @@ interface BrowserSettings {
   auto_update_enabled?: boolean;
 }
 
+interface ExtensionInfo {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  icon?: string | null;
+  enabled: boolean;
+  source: string;
+  path: string;
+  manifest_version: number;
+  options_page?: string | null;
+  popup_page?: string | null;
+  homepage_url?: string | null;
+}
+
 interface BrowserState {
   tabs: Tab[];
   active_tab_id?: number | null;
@@ -97,6 +112,7 @@ interface BrowserState {
   adblock_filter_lists?: FilterListConfig[];
   adblock_stats?: AdblockStats;
   update_state?: UpdateState;
+  extensions?: ExtensionInfo[];
 }
 
 interface SettingsInitState extends Partial<BrowserState> {
@@ -107,6 +123,7 @@ interface SettingsInitState extends Partial<BrowserState> {
   adblock_filter_lists?: FilterListConfig[];
   adblock_stats?: AdblockStats;
   adblock_custom_rules?: string[];
+  extensions?: ExtensionInfo[];
 }
 
 type IpcOutMessage =
@@ -151,22 +168,29 @@ type IpcOutMessage =
   | { type: 'ReportBlockedRequest'; domain: string; url: string; req_type: string }
   | { type: 'ReportBlockedAd'; domain: string; url: string; req_type: string }
   | { type: 'OpenThemes' }
+  | { type: 'OpenPrivacy' }
+  | { type: 'OpenAdblock' }
+  | { type: 'OpenExtensions' }
   | { type: 'OpenSettings' }
+  | { type: 'InstallExtension'; id_or_url: string; source?: string }
+  | { type: 'UninstallExtension'; id: string }
+  | { type: 'ToggleExtension'; id: string; enabled: boolean }
+  | { type: 'LoadUnpackedExtension'; path: string }
+  | { type: 'OpenExtensionOptions'; id: string }
+  | { type: 'OpenExtensionPopup'; id: string }
+  | { type: 'SetHeaderExpanded'; expanded: boolean }
   | { type: 'OpenHistory' }
   | { type: 'ClearHistory' }
   | { type: 'OpenDownloads' }
   | { type: 'ClearDownloads' }
   | { type: 'OpenDownload'; download_id: number }
   | { type: 'OpenDefaultBrowserSettings' }
-  | { type: 'OpenPrivacy' }
-  | { type: 'OpenAdblock' }
   | { type: 'ShowBookmarkContextMenu'; url: string }
   | { type: 'TabStateUpdate'; tab_id: number; url: string; title: string; can_go_back: boolean; can_go_forward: boolean }
   | { type: 'DragWindow' }
   | { type: 'MinimizeWindow' }
   | { type: 'ToggleMaximizeWindow' }
   | { type: 'CloseWindow' };
-
 
 interface Window {
   ipc?: {
@@ -201,4 +225,9 @@ interface Window {
   resetAdblockRules?: () => void;
   clearAdblockLogs?: () => void;
   filterAdblockRules?: (query: string) => void;
+  installExtensionFromInput?: () => void;
+  loadUnpackedExtensionPrompt?: () => void;
+  toggleExtensionItem?: (id: string, enabled: boolean) => void;
+  uninstallExtensionItem?: (id: string) => void;
+  openExtensionOptionsItem?: (id: string) => void;
 }

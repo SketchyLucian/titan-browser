@@ -25,6 +25,7 @@ pub struct StorageManager {
     history_file: PathBuf,
     session_file: PathBuf,
     downloads_file: PathBuf,
+    extensions_file: PathBuf,
 }
 
 impl StorageManager {
@@ -42,6 +43,7 @@ impl StorageManager {
             history_file: dir.join("history.json"),
             session_file: dir.join("session.json"),
             downloads_file: dir.join("downloads.json"),
+            extensions_file: dir.join("extensions.json"),
         }
     }
 
@@ -214,6 +216,14 @@ impl StorageManager {
 
     pub fn save_downloads(&self, downloads: &[DownloadRecord]) {
         self.save_json(&self.downloads_file, downloads);
+    }
+
+    pub fn load_extensions(&self) -> Vec<crate::extensions::ExtensionInfo> {
+        self.load_json(&self.extensions_file).unwrap_or_default()
+    }
+
+    pub fn save_extensions(&self, extensions: &[crate::extensions::ExtensionInfo]) {
+        self.save_json(&self.extensions_file, extensions);
     }
 }
 

@@ -191,21 +191,21 @@ impl Default for BrowserSettings {
             show_bookmarks_bar: false,
             do_not_track: true,
             global_privacy_control: true,
-            strip_tracking_parameters: true,
-            block_webrtc_leak: true,
-            block_fingerprinting: true,
-            block_hyperlink_auditing: true,
-            telemetry_disabled: true,
-            blocked_domains: default_blocked_domains(),
+            strip_tracking_parameters: false,
+            block_webrtc_leak: false,
+            block_fingerprinting: false,
+            block_hyperlink_auditing: false,
+            telemetry_disabled: false,
+            blocked_domains: vec![],
             whitelisted_domains: vec![],
-            adblock_enabled: true,
-            adblock_block_video_ads: true,
-            adblock_cosmetic_filtering: true,
-            adblock_block_popups: true,
+            adblock_enabled: false,
+            adblock_block_video_ads: false,
+            adblock_cosmetic_filtering: false,
+            adblock_block_popups: false,
             adblock_aggressive_mode: false,
-            adblock_blocked_domains: default_adblock_domains(),
+            adblock_blocked_domains: vec![],
             adblock_whitelisted_domains: vec![],
-            adblock_filter_lists: default_filter_lists(),
+            adblock_filter_lists: vec![],
             adblock_custom_rules: vec![],
             auto_update_enabled: false,
             privacy_migration_version: 1,
@@ -341,6 +341,30 @@ pub enum IpcIncoming {
     OpenThemes,
     OpenPrivacy,
     OpenAdblock,
+    OpenExtensions,
+    InstallExtension {
+        id_or_url: String,
+        source: Option<String>,
+    },
+    UninstallExtension {
+        id: String,
+    },
+    ToggleExtension {
+        id: String,
+        enabled: bool,
+    },
+    LoadUnpackedExtension {
+        path: String,
+    },
+    OpenExtensionOptions {
+        id: String,
+    },
+    OpenExtensionPopup {
+        id: String,
+    },
+    SetHeaderExpanded {
+        expanded: bool,
+    },
     TabStateUpdate {
         tab_id: Option<u32>,
         url: String,
@@ -361,18 +385,12 @@ mod tests {
     #[test]
     fn test_adblock_default_settings() {
         let settings = BrowserSettings::default();
-        assert!(settings.adblock_enabled);
-        assert!(settings.adblock_block_video_ads);
-        assert!(settings.adblock_cosmetic_filtering);
-        assert!(settings.adblock_block_popups);
+        assert!(!settings.adblock_enabled);
+        assert!(!settings.adblock_block_video_ads);
+        assert!(!settings.adblock_cosmetic_filtering);
+        assert!(!settings.adblock_block_popups);
         assert!(!settings.adblock_aggressive_mode);
-        assert!(!settings.adblock_blocked_domains.is_empty());
-        assert!(settings
-            .adblock_blocked_domains
-            .contains(&"doubleclick.net".to_string()));
-        assert!(settings
-            .adblock_blocked_domains
-            .contains(&"pagead2.googlesyndication.com".to_string()));
+        assert!(settings.adblock_blocked_domains.is_empty());
     }
 
     #[test]

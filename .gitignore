@@ -15,4 +15,5 @@ android/local.properties
 /ui/dist/
 /web-scripts/dist/
 /android-*.png
+*.crx
 

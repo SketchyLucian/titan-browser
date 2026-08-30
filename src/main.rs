@@ -7,6 +7,7 @@ mod desktop_adblock;
 #[cfg(target_os = "windows")]
 mod desktop_data;
 mod drag_util;
+pub mod extensions;
 mod ipc;
 mod menu_util;
 mod privacy;
@@ -34,10 +35,16 @@ fn main() {
     std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_data_dir);
 
     let mut privacy_browser_args = privacy::webview2_browser_args();
+    privacy_browser_args.push_str(" --enable-features=msWebView2BrowserExtension,Extensions --extensions-on-chrome-urls");
     if let Ok(port) = std::env::var("TITAN_PROFILE_PORT") {
         if port.parse::<u16>().is_ok() {
             privacy_browser_args.push_str(&format!(" --remote-debugging-port={port}"));
         }
+    }
+
+    let extension_paths = extensions::get_enabled_extension_paths();
+    if !extension_paths.is_empty() {
+        privacy_browser_args.push_str(&format!(" --load-extension={}", extension_paths.join(",")));
     }
 
     std::env::set_var(
