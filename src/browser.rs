@@ -1,6 +1,6 @@
 use crate::ipc::{
-    Bookmark, BrowserModule, BrowserSession, BrowserSettings, DownloadRecord, HistoryEntry,
-    IpcIncoming, IpcTabInfo, SessionTab,
+    Bookmark, BrowserModule, BrowserSession, BrowserSettings, DownloadRecord, ExtensionPopupAnchor,
+    HistoryEntry, IpcIncoming, IpcTabInfo, SessionTab,
 };
 use crate::storage::StorageManager;
 use crate::updater::{UpdateCheckResult, UpdateInfo, UpdateState, UpdateStatus};
@@ -19,6 +19,14 @@ use wry::{
 
 pub const HEADER_HEIGHT_COLLAPSED: f64 = 76.0;
 pub const HEADER_HEIGHT_EXPANDED: f64 = 102.0;
+const EXTENSION_POPUP_WIDTH: f64 = 360.0;
+const EXTENSION_POPUP_HEIGHT: f64 = 580.0;
+const EXTENSION_POPUP_MIN_WIDTH: f64 = 320.0;
+const EXTENSION_POPUP_MIN_HEIGHT: f64 = 120.0;
+const EXTENSION_POPUP_MAX_WIDTH: f64 = 360.0;
+const EXTENSION_POPUP_MAX_HEIGHT: f64 = 600.0;
+const EXTENSION_POPUP_MARGIN: f64 = 10.0;
+const EXTENSION_POPUP_GAP: f64 = 6.0;
 
 fn render_typescript(template: &str, placeholder: &str, config: serde_json::Value) -> String {
     let config_json = serde_json::to_string(&config).unwrap_or_else(|_| "{}".into());
@@ -102,6 +110,26 @@ fn desktop_extensions_script(extensions: &[crate::extensions::ExtensionInfo]) ->
     )
 }
 
+fn extension_resource_url(ext: &crate::extensions::ExtensionInfo, page: &str) -> String {
+    format!(
+        "chrome-extension://{}/{}",
+        ext.runtime_or_store_id(),
+        page.trim_start_matches('/')
+    )
+}
+
+fn is_same_extension_record(
+    existing: &crate::extensions::ExtensionInfo,
+    incoming: &crate::extensions::ExtensionInfo,
+) -> bool {
+    existing.id == incoming.id
+        || existing.path == incoming.path
+        || incoming
+            .runtime_id
+            .as_ref()
+            .is_some_and(|runtime_id| existing.runtime_id.as_ref() == Some(runtime_id))
+}
+
 #[derive(Debug)]
 pub enum UserEvent {
     Ipc(String),
@@ -160,11 +188,21 @@ fn is_allowed_content_ipc(message: &str, own_tab_id: u32) -> bool {
         IpcIncoming::InstallExtension { .. } => true,
         IpcIncoming::OpenExtensionPopup { .. } => true,
         IpcIncoming::OpenExtensionOptions { .. } => true,
+        IpcIncoming::CloseExtensionPopup => true,
         IpcIncoming::SetHeaderExpanded { .. } => true,
         IpcIncoming::TabStateUpdate { tab_id, .. } => tab_id == Some(own_tab_id),
         IpcIncoming::ReportBlockedRequest { .. } | IpcIncoming::ReportBlockedAd { .. } => true,
         _ => false,
     }
+}
+
+fn is_allowed_extension_popup_ipc(message: &str) -> bool {
+    serde_json::from_str::<IpcIncoming>(message).is_ok_and(|message| {
+        matches!(
+            message,
+            IpcIncoming::CloseExtensionPopup | IpcIncoming::ResizeExtensionPopup { .. }
+        )
+    })
 }
 
 pub struct Tab {
@@ -176,6 +214,14 @@ pub struct Tab {
     pub can_go_forward: bool,
     pub is_private: bool,
     pub webview: WebView,
+}
+
+struct ExtensionPopup {
+    url: String,
+    webview: WebView,
+    anchor: Option<ExtensionPopupAnchor>,
+    width: f64,
+    height: f64,
 }
 
 pub struct BrowserManager {
@@ -201,6 +247,7 @@ pub struct BrowserManager {
     pub history: Vec<HistoryEntry>,
     pub downloads: Vec<DownloadRecord>,
     pub extensions: Vec<crate::extensions::ExtensionInfo>,
+    extension_popup: Option<ExtensionPopup>,
     pub header_expanded: bool,
     next_download_id: u64,
     pending_popup_tabs: Rc<RefCell<Vec<Tab>>>,
@@ -273,6 +320,7 @@ impl BrowserManager {
             history,
             downloads,
             extensions,
+            extension_popup: None,
             header_expanded: false,
             next_download_id,
             pending_popup_tabs: Rc::new(RefCell::new(Vec::new())),
@@ -326,10 +374,24 @@ impl BrowserManager {
 
         #[cfg(target_os = "windows")]
         if let Some(ref view) = self.header_webview {
-            for ext in &self.extensions {
+            let mut changed = false;
+            for ext in &mut self.extensions {
                 if ext.enabled && std::path::Path::new(&ext.path).exists() {
-                    let _ = crate::desktop_data::install_browser_extension(view, &ext.path);
+                    match crate::desktop_data::install_browser_extension(view, &ext.path) {
+                        Ok(registered) => {
+                            if ext.runtime_id.as_deref() != Some(&registered.id) {
+                                ext.runtime_id = Some(registered.id);
+                                changed = true;
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("Could not register extension into WebView2: {error}");
+                        }
+                    }
                 }
+            }
+            if changed {
+                self.storage.save_extensions(&self.extensions);
             }
         }
 
@@ -518,6 +580,491 @@ impl BrowserManager {
         Rect {
             position: LogicalPosition::new(0.0, header_height).into(),
             size: LogicalSize::new(width, content_height).into(),
+        }
+    }
+
+    fn get_extension_popup_bounds(
+        &self,
+        anchor: Option<&ExtensionPopupAnchor>,
+        requested_size: Option<(f64, f64)>,
+    ) -> Rect {
+        let (window_width, window_height) = self.get_current_window_size();
+        let available_width = (window_width - EXTENSION_POPUP_MARGIN * 2.0)
+            .max(EXTENSION_POPUP_MIN_WIDTH.min(window_width.max(1.0)));
+        let max_width = EXTENSION_POPUP_MAX_WIDTH.min(available_width);
+        let min_width = EXTENSION_POPUP_MIN_WIDTH.min(max_width);
+        let requested_width = requested_size
+            .map(|(width, _)| width)
+            .filter(|width| width.is_finite() && *width > 0.0)
+            .unwrap_or(EXTENSION_POPUP_WIDTH);
+        let popup_width = requested_width.ceil().clamp(min_width, max_width);
+        let fallback_y = HEADER_HEIGHT_COLLAPSED + EXTENSION_POPUP_GAP;
+        let desired_y = anchor
+            .map(|anchor| anchor.y + anchor.height + EXTENSION_POPUP_GAP)
+            .unwrap_or(fallback_y);
+        let y = desired_y
+            .max(EXTENSION_POPUP_MARGIN)
+            .min((window_height - 120.0).max(EXTENSION_POPUP_MARGIN));
+        let available_height =
+            (window_height - y - EXTENSION_POPUP_MARGIN).max(EXTENSION_POPUP_MIN_HEIGHT);
+        let max_height = EXTENSION_POPUP_MAX_HEIGHT.min(available_height);
+        let min_height = EXTENSION_POPUP_MIN_HEIGHT.min(max_height);
+        let requested_height = requested_size
+            .map(|(_, height)| height)
+            .filter(|height| height.is_finite() && *height > 0.0)
+            .unwrap_or(EXTENSION_POPUP_HEIGHT);
+        let popup_height = requested_height.ceil().clamp(min_height, max_height);
+        let fallback_x = window_width - popup_width - EXTENSION_POPUP_MARGIN;
+        let desired_x = anchor
+            .map(|anchor| anchor.x + anchor.width - popup_width)
+            .unwrap_or(fallback_x);
+        let max_x =
+            (window_width - popup_width - EXTENSION_POPUP_MARGIN).max(EXTENSION_POPUP_MARGIN);
+        let x = desired_x.clamp(EXTENSION_POPUP_MARGIN, max_x);
+
+        Rect {
+            position: LogicalPosition::new(x, y).into(),
+            size: LogicalSize::new(popup_width, popup_height).into(),
+        }
+    }
+
+    fn close_extension_popup(&mut self) {
+        if let Some(popup) = self.extension_popup.take() {
+            let _ = popup.webview.set_visible(false);
+        }
+    }
+
+    fn resize_extension_popup(&mut self, width: f64, height: f64) {
+        let Some((anchor, current_size)) = self
+            .extension_popup
+            .as_ref()
+            .map(|popup| (popup.anchor.clone(), (popup.width, popup.height)))
+        else {
+            return;
+        };
+
+        let requested_bounds =
+            self.get_extension_popup_bounds(anchor.as_ref(), Some((width, height)));
+        let requested_size = requested_bounds
+            .size
+            .to_logical::<f64>(self.window.scale_factor());
+        let next_bounds = self.get_extension_popup_bounds(
+            anchor.as_ref(),
+            Some((
+                requested_size.width.min(current_size.0),
+                requested_size.height.min(current_size.1),
+            )),
+        );
+        let next_size = next_bounds
+            .size
+            .to_logical::<f64>(self.window.scale_factor());
+        if let Some(popup) = &mut self.extension_popup {
+            if (popup.width - next_size.width).abs() < 1.0
+                && (popup.height - next_size.height).abs() < 1.0
+            {
+                return;
+            }
+            popup.width = next_size.width;
+            popup.height = next_size.height;
+            let _ = popup.webview.set_bounds(next_bounds);
+        }
+    }
+
+    fn open_extension_popup(&mut self, id: &str, anchor: Option<ExtensionPopupAnchor>) {
+        let Some(url) = self
+            .extensions
+            .iter()
+            .find(|e| e.matches_id(id))
+            .and_then(|ext| {
+                if !ext.enabled {
+                    return None;
+                }
+                ext.popup_page
+                    .as_deref()
+                    .or(ext.options_page.as_deref())
+                    .map(|page| extension_resource_url(ext, page))
+            })
+        else {
+            self.close_extension_popup();
+            return;
+        };
+
+        if self
+            .extension_popup
+            .as_ref()
+            .is_some_and(|popup| popup.url == url)
+        {
+            self.close_extension_popup();
+            return;
+        }
+
+        self.close_extension_popup();
+
+        let bounds = self.get_extension_popup_bounds(anchor.as_ref(), None);
+        let initial_size = bounds.size.to_logical::<f64>(self.window.scale_factor());
+        let ipc_proxy = self.proxy.clone();
+        let new_window_proxy = self.proxy.clone();
+        let init_script = r#"
+(() => {
+  const post = (message) => {
+    try { window.ipc.postMessage(JSON.stringify(message)); } catch (_) {}
+  };
+  let lastPostedSize = null;
+  let pendingSize = null;
+  let measureQueued = false;
+  let settleTimer = 0;
+  let stopTimer = 0;
+  let resizeStopped = false;
+  const startedAt = Date.now();
+  const observedMutationRoots = new WeakSet();
+  const RESIZE_EPSILON = 4;
+  const SETTLE_DELAY_MS = 90;
+  const MIN_ACTIVE_MS = 1000;
+  const QUIET_STOP_MS = 450;
+  const HARD_STOP_MS = 3500;
+  const sizesDiffer = (first, second) =>
+    !first ||
+    !second ||
+    Math.abs(first.width - second.width) >= RESIZE_EPSILON ||
+    Math.abs(first.height - second.height) >= RESIZE_EPSILON;
+  const stopAutomaticResize = () => {
+    resizeStopped = true;
+    if (settleTimer) clearTimeout(settleTimer);
+    if (stopTimer) clearTimeout(stopTimer);
+  };
+  const scheduleResizeStop = () => {
+    if (Date.now() - startedAt < MIN_ACTIVE_MS) return;
+    if (stopTimer) clearTimeout(stopTimer);
+    stopTimer = setTimeout(stopAutomaticResize, QUIET_STOP_MS);
+  };
+  const numericStyleValue = (style, property) => {
+    if (!style) return 0;
+    const raw = style.getPropertyValue(property);
+    if (!raw || raw === 'auto' || raw.endsWith('%')) return 0;
+    const value = Number.parseFloat(raw);
+    return Number.isFinite(value) ? value : 0;
+  };
+  const collectElements = (root, elements) => {
+    if (!root?.querySelectorAll) return;
+    root.querySelectorAll('*').forEach((element) => {
+      elements.push(element);
+      if (element.shadowRoot) collectElements(element.shadowRoot, elements);
+    });
+  };
+  const allElements = () => {
+    const body = document.body;
+    if (!body) return [];
+    const elements = [body];
+    collectElements(body, elements);
+    return elements;
+  };
+  const viewportWidth = () => Math.max(
+    window.innerWidth || 0,
+    document.documentElement?.clientWidth || 0,
+    0
+  );
+  const styleWidth = (style) =>
+    numericStyleValue(style, 'width') +
+    numericStyleValue(style, 'padding-left') +
+    numericStyleValue(style, 'padding-right') +
+    numericStyleValue(style, 'border-left-width') +
+    numericStyleValue(style, 'border-right-width');
+  const fillsViewportWidth = (element, rect, style) => {
+    const width = viewportWidth();
+    if (!width || !rect.width) return false;
+    if (Math.abs(rect.width - width) <= 2 && rect.left <= 1 && rect.right >= width - 1) {
+      return true;
+    }
+    if (element === document.body) {
+      const margins =
+        numericStyleValue(style, 'margin-left') +
+        numericStyleValue(style, 'margin-right');
+      return Math.abs(rect.width + margins - width) <= 2;
+    }
+    return false;
+  };
+  const shouldSkipGeometry = (element, rect, style) =>
+    (window.SVGElement &&
+      element instanceof SVGElement &&
+      element.tagName.toLowerCase() !== 'svg') ||
+    style.display === 'none' ||
+    style.visibility === 'hidden' ||
+    style.position === 'fixed' ||
+    ((rect.width <= 0 && rect.height <= 0) && !(element.scrollWidth || element.scrollHeight));
+  const nextAncestor = (element) => {
+    if (element.parentElement) return element.parentElement;
+    const root = element.getRootNode?.();
+    return root?.host || null;
+  };
+  const clippedRect = (element, rect) => {
+    let left = rect.left;
+    let right = rect.right;
+    let top = rect.top;
+    let bottom = rect.bottom;
+    for (let ancestor = nextAncestor(element); ancestor; ancestor = nextAncestor(ancestor)) {
+      const style = window.getComputedStyle(ancestor);
+      const ancestorRect = ancestor.getBoundingClientRect();
+      const clipsX = ['auto', 'clip', 'hidden', 'scroll'].includes(style.overflowX);
+      const clipsY = ['auto', 'clip', 'hidden', 'scroll'].includes(style.overflowY);
+      if (clipsX) {
+        left = Math.max(left, ancestorRect.left);
+        right = Math.min(right, ancestorRect.right);
+      }
+      if (clipsY) {
+        top = Math.max(top, ancestorRect.top);
+        bottom = Math.min(bottom, ancestorRect.bottom);
+      }
+    }
+    return {
+      left,
+      right,
+      top,
+      bottom,
+      width: Math.max(0, right - left),
+      height: Math.max(0, bottom - top),
+    };
+  };
+  const horizontalBox = (element) => {
+    if (!element) return 0;
+    const style = window.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    if (shouldSkipGeometry(element, rect, style)) return 0;
+    const viewportFilled = fillsViewportWidth(element, rect, style);
+    const candidates = [
+      numericStyleValue(style, 'min-width') +
+        numericStyleValue(style, 'padding-left') +
+        numericStyleValue(style, 'padding-right') +
+        numericStyleValue(style, 'border-left-width') +
+        numericStyleValue(style, 'border-right-width'),
+    ];
+    if (!viewportFilled || rect.width > viewportWidth() + 2) {
+      candidates.push(rect.width, styleWidth(style));
+    }
+    return Math.max(...candidates, 0);
+  };
+  const verticalBox = (element) => {
+    if (!element) return 0;
+    const style = window.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    if (shouldSkipGeometry(element, rect, style)) return 0;
+    return Math.max(
+      rect.height,
+      element.scrollHeight || 0,
+      numericStyleValue(style, 'height') +
+        numericStyleValue(style, 'padding-top') +
+        numericStyleValue(style, 'padding-bottom') +
+        numericStyleValue(style, 'border-top-width') +
+        numericStyleValue(style, 'border-bottom-width'),
+      numericStyleValue(style, 'min-height')
+    );
+  };
+  const elementBounds = () => {
+    const body = document.body;
+    if (!body) return null;
+    let minLeft = Infinity;
+    let maxRight = -Infinity;
+    let minTop = Infinity;
+    let maxBottom = -Infinity;
+    for (const element of allElements()) {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      if (shouldSkipGeometry(element, rect, style)) continue;
+      if (fillsViewportWidth(element, rect, style)) continue;
+      const visibleRect = clippedRect(element, rect);
+      if (visibleRect.width <= 0 && visibleRect.height <= 0) continue;
+      minLeft = Math.min(minLeft, visibleRect.left + window.scrollX);
+      maxRight = Math.max(maxRight, visibleRect.right + window.scrollX);
+      minTop = Math.min(minTop, visibleRect.top + window.scrollY);
+      maxBottom = Math.max(maxBottom, visibleRect.bottom + window.scrollY);
+    }
+    if (!Number.isFinite(minLeft) || !Number.isFinite(maxRight)) return null;
+    return {
+      width: Math.max(0, maxRight - minLeft),
+      height: Math.max(0, maxBottom - minTop),
+    };
+  };
+  const bodyExtras = () => {
+    const style = document.body ? window.getComputedStyle(document.body) : null;
+    if (!style) return { width: 0, height: 0 };
+    return {
+      width:
+        numericStyleValue(style, 'padding-left') +
+        numericStyleValue(style, 'padding-right') +
+        numericStyleValue(style, 'border-left-width') +
+        numericStyleValue(style, 'border-right-width'),
+      height:
+        numericStyleValue(style, 'padding-top') +
+        numericStyleValue(style, 'padding-bottom') +
+        numericStyleValue(style, 'border-top-width') +
+        numericStyleValue(style, 'border-bottom-width'),
+    };
+  };
+  const measurePopup = () => {
+    const body = document.body;
+    const bounds = elementBounds();
+    const extras = bodyExtras();
+    const elements = allElements();
+    const childWidths = Array.from(elements, horizontalBox);
+    const childHeights = Array.from(elements, verticalBox);
+    const width = Math.ceil(Math.max(
+      bounds ? bounds.width + extras.width : 0,
+      ...childWidths,
+      0
+    ));
+    const height = Math.ceil(Math.max(
+      verticalBox(body),
+      bounds ? bounds.height + extras.height : 0,
+      ...childHeights,
+      body?.scrollHeight || 0,
+      0
+    ));
+    if (width <= 0 || height <= 0) return;
+    if (!sizesDiffer({ width, height }, pendingSize)) {
+      scheduleResizeStop();
+      return;
+    }
+    pendingSize = { width, height };
+    if (stopTimer) clearTimeout(stopTimer);
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      if (!pendingSize || !sizesDiffer(pendingSize, lastPostedSize)) return;
+      lastPostedSize = pendingSize;
+      post({ type: 'ResizeExtensionPopup', width: pendingSize.width, height: pendingSize.height });
+      scheduleResizeStop();
+    }, SETTLE_DELAY_MS);
+    if (Date.now() - startedAt > HARD_STOP_MS) {
+      stopAutomaticResize();
+    }
+  };
+  const scheduleMeasure = () => {
+    if (resizeStopped) return;
+    if (measureQueued) return;
+    measureQueued = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      measureQueued = false;
+      if (resizeStopped) return;
+      measurePopup();
+    }));
+  };
+  const observeDom = () => {
+    if (!window.MutationObserver) return;
+    const observeRoot = (root) => {
+      if (!root || observedMutationRoots.has(root)) return;
+      observedMutationRoots.add(root);
+      const observer = new MutationObserver(() => {
+        observeDom();
+        scheduleMeasure();
+      });
+      observer.observe(root, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+        attributeFilter: ['class', 'style', 'hidden', 'open'],
+      });
+    };
+    observeRoot(document.documentElement);
+    observeRoot(document.body);
+    allElements().forEach((element) => observeRoot(element.shadowRoot));
+  };
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      post({ type: 'CloseExtensionPopup' });
+    }
+  }, true);
+  window.addEventListener('load', scheduleMeasure);
+  document.addEventListener('DOMContentLoaded', () => {
+    observeDom();
+    scheduleMeasure();
+  });
+  document.addEventListener('readystatechange', () => {
+    observeDom();
+    scheduleMeasure();
+  });
+  observeDom();
+  [0, 50, 120, 250, 500, 900, 1500, 2500, 3300].forEach((delay) => setTimeout(scheduleMeasure, delay));
+  const timer = setInterval(() => {
+    if (resizeStopped) {
+      clearInterval(timer);
+      return;
+    }
+    observeDom();
+    scheduleMeasure();
+    scheduleResizeStop();
+    if (Date.now() - startedAt > HARD_STOP_MS) {
+      stopAutomaticResize();
+      clearInterval(timer);
+    }
+  }, 250);
+})();
+"#;
+
+        #[allow(unused_mut)]
+        let mut builder = WebViewBuilder::new();
+        #[cfg(target_os = "windows")]
+        {
+            builder = builder.with_browser_extensions_enabled(true);
+            if let Some(environment) = self
+                .header_webview
+                .as_ref()
+                .map(|view| view.environment())
+                .or_else(|| {
+                    self.tabs
+                        .iter()
+                        .find(|tab| !tab.is_private)
+                        .map(|tab| tab.webview.environment())
+                })
+            {
+                builder = builder.with_environment(environment);
+            }
+        }
+
+        let popup_webview = builder
+            .with_bounds(bounds)
+            .with_background_color((255, 255, 255, 255))
+            .with_transparent(false)
+            .with_visible(true)
+            .with_focused(true)
+            .with_initialization_script(init_script)
+            .with_ipc_handler(move |request| {
+                let message = request.body();
+                if is_allowed_extension_popup_ipc(message) {
+                    let _ = ipc_proxy.send_event(UserEvent::Ipc(message.clone()));
+                }
+            })
+            .with_new_window_req_handler(move |target_url, _| {
+                let _ = new_window_proxy.send_event(UserEvent::OpenPopup { url: target_url });
+                NewWindowResponse::Deny
+            })
+            .build_as_child(&*self.window);
+
+        let popup_webview = match popup_webview {
+            Ok(webview) => webview,
+            Err(error) => {
+                eprintln!("Could not create extension popup WebView: {error}");
+                return;
+            }
+        };
+
+        let _ = popup_webview.focus();
+        self.extension_popup = Some(ExtensionPopup {
+            url: url.clone(),
+            webview: popup_webview,
+            anchor,
+            width: initial_size.width,
+            height: initial_size.height,
+        });
+        let load_result = self
+            .extension_popup
+            .as_ref()
+            .map(|popup| popup.webview.load_url(&url));
+        if let Some(Err(error)) = load_result {
+            eprintln!("Could not load extension popup {url}: {error}");
+            self.close_extension_popup();
+        }
+        if let Some(popup) = &self.extension_popup {
+            let _ = popup.webview.focus();
         }
     }
 
@@ -755,15 +1302,16 @@ impl BrowserManager {
                 {
                     popup_builder = popup_builder.with_browser_extensions_enabled(true);
                 }
-                let popup_webview = popup_builder
-                    .with_incognito(is_private)
-                    .with_environment(features.opener.environment)
-                    .with_bounds(content_bounds)
-                    .with_background_color(bg_color)
-                    .with_transparent(false)
-                    .with_visible(false)
-                    .with_focused(false)
-                    .with_initialization_script(&popup_init_script)
+                let popup_webview =
+                    popup_builder
+                        .with_incognito(is_private)
+                        .with_environment(features.opener.environment)
+                        .with_bounds(content_bounds)
+                        .with_background_color(bg_color)
+                        .with_transparent(false)
+                        .with_visible(false)
+                        .with_focused(false)
+                        .with_initialization_script(&popup_init_script)
                         .with_ipc_handler(move |request| {
                             let message = request.body();
                             if is_allowed_content_ipc(message, popup_tab_id) {
@@ -1175,6 +1723,7 @@ impl BrowserManager {
     }
 
     pub fn open_popup(&mut self, requested_url: &str) {
+        self.close_extension_popup();
         if let Some(target_url) = popup_target_url(requested_url) {
             self.create_tab(&target_url);
         }
@@ -1735,6 +2284,7 @@ impl BrowserManager {
     }
 
     pub fn resize(&mut self, width: f64, height: f64) {
+        self.close_extension_popup();
         self.window_size = (width, height);
         let header_height = self.get_header_height();
 
@@ -1765,8 +2315,25 @@ impl BrowserManager {
         }
     }
 
+    fn should_close_extension_popup_for_ipc(message: &IpcIncoming) -> bool {
+        match message {
+            IpcIncoming::UiReady
+            | IpcIncoming::OpenExtensionPopup { .. }
+            | IpcIncoming::ResizeExtensionPopup { .. }
+            | IpcIncoming::TabStateUpdate { .. }
+            | IpcIncoming::ReportBlockedRequest { .. }
+            | IpcIncoming::ReportBlockedAd { .. } => false,
+            IpcIncoming::SetHeaderExpanded { expanded } => *expanded,
+            _ => true,
+        }
+    }
+
     pub fn handle_incoming_ipc(&mut self, msg_str: &str) {
         if let Ok(msg) = serde_json::from_str::<IpcIncoming>(msg_str) {
+            if Self::should_close_extension_popup_for_ipc(&msg) {
+                self.close_extension_popup();
+            }
+
             match msg {
                 IpcIncoming::UiReady => {
                     self.sync_full_state();
@@ -2138,7 +2705,7 @@ impl BrowserManager {
                         &id_or_url,
                         source.as_deref(),
                     ) {
-                        Ok(ext) => {
+                        Ok(mut ext) => {
                             #[cfg(target_os = "windows")]
                             if let Some(profile_view) = self.header_webview.as_ref().or_else(|| {
                                 self.tabs
@@ -2146,15 +2713,21 @@ impl BrowserManager {
                                     .find(|tab| !tab.is_private)
                                     .map(|tab| &tab.webview)
                             }) {
-                                if let Err(error) = crate::desktop_data::install_browser_extension(
+                                match crate::desktop_data::install_browser_extension(
                                     profile_view,
                                     &ext.path,
                                 ) {
-                                    eprintln!("Could not dynamically register extension into WebView2: {error}");
+                                    Ok(registered) => {
+                                        ext.runtime_id = Some(registered.id);
+                                    }
+                                    Err(error) => {
+                                        eprintln!("Could not dynamically register extension into WebView2: {error}");
+                                    }
                                 }
                             }
 
-                            self.extensions.retain(|e| e.id != ext.id);
+                            self.extensions
+                                .retain(|e| !is_same_extension_record(e, &ext));
                             self.extensions.push(ext);
                             self.storage.save_extensions(&self.extensions);
                             self.sync_settings_tabs();
@@ -2166,15 +2739,22 @@ impl BrowserManager {
                     }
                 }
                 IpcIncoming::UninstallExtension { id } => {
-                    self.extensions.retain(|e| e.id != id);
-                    let ext_dir = crate::extensions::get_extensions_dir().join(&id);
-                    let _ = std::fs::remove_dir_all(ext_dir);
+                    let removed_paths = self
+                        .extensions
+                        .iter()
+                        .filter(|e| e.matches_id(&id))
+                        .map(|e| e.path.clone())
+                        .collect::<Vec<_>>();
+                    self.extensions.retain(|e| !e.matches_id(&id));
+                    for path in removed_paths {
+                        let _ = std::fs::remove_dir_all(path);
+                    }
                     self.storage.save_extensions(&self.extensions);
                     self.sync_settings_tabs();
                     self.sync_full_state();
                 }
                 IpcIncoming::ToggleExtension { id, enabled } => {
-                    if let Some(ext) = self.extensions.iter_mut().find(|e| e.id == id) {
+                    if let Some(ext) = self.extensions.iter_mut().find(|e| e.matches_id(&id)) {
                         ext.enabled = enabled;
                     }
                     self.storage.save_extensions(&self.extensions);
@@ -2183,7 +2763,7 @@ impl BrowserManager {
                 }
                 IpcIncoming::LoadUnpackedExtension { path } => {
                     match crate::extensions::load_unpacked_extension(&path) {
-                        Ok(ext) => {
+                        Ok(mut ext) => {
                             #[cfg(target_os = "windows")]
                             if let Some(profile_view) = self.header_webview.as_ref().or_else(|| {
                                 self.tabs
@@ -2191,15 +2771,21 @@ impl BrowserManager {
                                     .find(|tab| !tab.is_private)
                                     .map(|tab| &tab.webview)
                             }) {
-                                if let Err(error) = crate::desktop_data::install_browser_extension(
+                                match crate::desktop_data::install_browser_extension(
                                     profile_view,
                                     &ext.path,
                                 ) {
-                                    eprintln!("Could not dynamically register extension into WebView2: {error}");
+                                    Ok(registered) => {
+                                        ext.runtime_id = Some(registered.id);
+                                    }
+                                    Err(error) => {
+                                        eprintln!("Could not dynamically register extension into WebView2: {error}");
+                                    }
                                 }
                             }
 
-                            self.extensions.retain(|e| e.id != ext.id);
+                            self.extensions
+                                .retain(|e| !is_same_extension_record(e, &ext));
                             self.extensions.push(ext);
                             self.storage.save_extensions(&self.extensions);
                             self.sync_settings_tabs();
@@ -2211,22 +2797,22 @@ impl BrowserManager {
                     }
                 }
                 IpcIncoming::OpenExtensionOptions { id } => {
-                    if let Some(ext) = self.extensions.iter().find(|e| e.id == id) {
+                    if let Some(ext) = self.extensions.iter().find(|e| e.matches_id(&id)) {
                         let page = ext.options_page.as_deref().or(ext.popup_page.as_deref());
                         if let Some(options_page) = page {
-                            let url = format!("chrome-extension://{}/{}", ext.id, options_page);
+                            let url = extension_resource_url(ext, options_page);
                             self.create_tab(&url);
                         }
                     }
                 }
-                IpcIncoming::OpenExtensionPopup { id } => {
-                    if let Some(ext) = self.extensions.iter().find(|e| e.id == id) {
-                        let page = ext.popup_page.as_deref().or(ext.options_page.as_deref());
-                        if let Some(popup_page) = page {
-                            let url = format!("chrome-extension://{}/{}", ext.id, popup_page);
-                            self.create_tab(&url);
-                        }
-                    }
+                IpcIncoming::OpenExtensionPopup { id, anchor } => {
+                    self.open_extension_popup(&id, anchor);
+                }
+                IpcIncoming::ResizeExtensionPopup { width, height } => {
+                    self.resize_extension_popup(width, height);
+                }
+                IpcIncoming::CloseExtensionPopup => {
+                    self.close_extension_popup();
                 }
                 IpcIncoming::SetHeaderExpanded { expanded } => {
                     self.header_expanded = expanded;
@@ -2355,7 +2941,29 @@ impl BrowserManager {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_allowed_content_ipc, popup_target_url};
+    use super::{is_allowed_content_ipc, is_same_extension_record, popup_target_url};
+
+    fn extension_record(
+        id: &str,
+        path: &str,
+        runtime_id: Option<&str>,
+    ) -> crate::extensions::ExtensionInfo {
+        crate::extensions::ExtensionInfo {
+            id: id.into(),
+            name: id.into(),
+            version: "1.0.0".into(),
+            description: String::new(),
+            icon: None,
+            enabled: true,
+            source: "test".into(),
+            path: path.into(),
+            manifest_version: 3,
+            options_page: None,
+            popup_page: Some("popup.html".into()),
+            homepage_url: None,
+            runtime_id: runtime_id.map(String::from),
+        }
+    }
 
     #[test]
     fn popup_target_accepts_web_urls() {
@@ -2413,5 +3021,24 @@ mod tests {
             7
         ));
         assert!(!is_allowed_content_ipc(r#"{"type":"CloseWindow"}"#, 7));
+    }
+
+    #[test]
+    fn missing_runtime_ids_do_not_dedupe_distinct_extensions() {
+        let first = extension_record("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "C:/ext/first", None);
+        let second = extension_record("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "C:/ext/second", None);
+        let same_runtime = extension_record(
+            "cccccccccccccccccccccccccccccccc",
+            "C:/ext/third",
+            Some("dddddddddddddddddddddddddddddddd"),
+        );
+        let matching_runtime = extension_record(
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "C:/ext/fourth",
+            Some("dddddddddddddddddddddddddddddddd"),
+        );
+
+        assert!(!is_same_extension_record(&first, &second));
+        assert!(is_same_extension_record(&same_runtime, &matching_runtime));
     }
 }

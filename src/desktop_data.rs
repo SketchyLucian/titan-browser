@@ -1,6 +1,17 @@
-use webview2_com::{ClearBrowsingDataCompletedHandler, Microsoft::Web::WebView2::Win32::*};
-use windows_core::Interface;
+use std::sync::mpsc;
+use webview2_com::{
+    take_pwstr, ClearBrowsingDataCompletedHandler, Microsoft::Web::WebView2::Win32::*,
+    ProfileAddBrowserExtensionCompletedHandler,
+};
+use windows_core::{Interface, BOOL, PWSTR};
 use wry::{WebView, WebViewExtWindows};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegisteredBrowserExtension {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+}
 
 fn selected_data_kinds(
     cookies: bool,
@@ -43,10 +54,29 @@ pub fn clear_browsing_data(
     unsafe { profile.ClearBrowsingData(kinds, &handler) }.map_err(|error| error.to_string())
 }
 
+fn read_browser_extension_info(
+    extension: &ICoreWebView2BrowserExtension,
+) -> Result<RegisteredBrowserExtension, String> {
+    let mut id = PWSTR::null();
+    unsafe { extension.Id(&mut id) }.map_err(|error| error.to_string())?;
+
+    let mut name = PWSTR::null();
+    unsafe { extension.Name(&mut name) }.map_err(|error| error.to_string())?;
+
+    let mut enabled = BOOL::default();
+    unsafe { extension.IsEnabled(&mut enabled) }.map_err(|error| error.to_string())?;
+
+    Ok(RegisteredBrowserExtension {
+        id: take_pwstr(id),
+        name: take_pwstr(name),
+        enabled: enabled.as_bool(),
+    })
+}
+
 pub fn install_browser_extension(
     webview: &WebView,
     extension_folder_path: &str,
-) -> Result<(), String> {
+) -> Result<RegisteredBrowserExtension, String> {
     let controller = webview.controller();
     let core = unsafe { controller.CoreWebView2() }.map_err(|error| error.to_string())?;
     let profile = core
@@ -55,25 +85,24 @@ pub fn install_browser_extension(
         .and_then(|profile| profile.cast::<ICoreWebView2Profile7>())
         .map_err(|error| error.to_string())?;
 
+    let (tx, rx) = mpsc::channel();
     let path_wide = windows_core::HSTRING::from(extension_folder_path);
-    let handler = webview2_com::ProfileAddBrowserExtensionCompletedHandler::create(Box::new(
-        |result, _ext| {
-            if let Err(e) = result {
-                eprintln!("AddBrowserExtension error: {e}");
-            } else {
-                println!("Extension successfully added to WebView2 profile dynamically!");
-            }
+    let handler =
+        ProfileAddBrowserExtensionCompletedHandler::create(Box::new(move |result, extension| {
+            let registered = result.map_err(|error| error.to_string()).and_then(|_| {
+                extension
+                    .as_ref()
+                    .ok_or_else(|| "WebView2 did not return extension metadata".to_string())
+                    .and_then(read_browser_extension_info)
+            });
+            let _ = tx.send(registered);
             Ok(())
-        },
-    ));
+        }));
 
-    unsafe {
-        profile.AddBrowserExtension(
-            windows_core::PCWSTR(path_wide.as_ptr()),
-            &handler,
-        )
-    }
-    .map_err(|error| error.to_string())
+    unsafe { profile.AddBrowserExtension(windows_core::PCWSTR(path_wide.as_ptr()), &handler) }
+        .map_err(|error| error.to_string())?;
+
+    webview2_com::wait_with_pump(rx).map_err(|error| error.to_string())?
 }
 
 #[cfg(test)]

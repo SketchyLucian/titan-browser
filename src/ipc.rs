@@ -56,6 +56,14 @@ pub struct DownloadRecord {
     pub started_ms: u64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtensionPopupAnchor {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockedRequestLog {
     pub domain: String,
@@ -361,7 +369,14 @@ pub enum IpcIncoming {
     },
     OpenExtensionPopup {
         id: String,
+        #[serde(default)]
+        anchor: Option<ExtensionPopupAnchor>,
     },
+    ResizeExtensionPopup {
+        width: f64,
+        height: f64,
+    },
+    CloseExtensionPopup,
     SetHeaderExpanded {
         expanded: bool,
     },

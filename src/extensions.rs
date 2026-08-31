@@ -19,6 +19,18 @@ pub struct ExtensionInfo {
     pub options_page: Option<String>,
     pub popup_page: Option<String>,
     pub homepage_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_id: Option<String>,
+}
+
+impl ExtensionInfo {
+    pub fn runtime_or_store_id(&self) -> &str {
+        self.runtime_id.as_deref().unwrap_or(&self.id)
+    }
+
+    pub fn matches_id(&self, id: &str) -> bool {
+        self.id == id || self.runtime_id.as_deref() == Some(id)
+    }
 }
 
 pub fn get_extensions_dir() -> PathBuf {
@@ -156,14 +168,15 @@ fn resolve_manifest_message(text: &str, dir: &Path) -> String {
     let locales = ["en", "en_US", "en_GB", "_locales/en", "vi", "default"];
 
     for locale in locales {
-        let locale_file = dir
-            .join("_locales")
-            .join(locale)
-            .join("messages.json");
+        let locale_file = dir.join("_locales").join(locale).join("messages.json");
         if locale_file.exists() {
             if let Ok(content) = fs::read_to_string(&locale_file) {
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(msg) = json.get(key).and_then(|v| v.get("message")).and_then(|m| m.as_str()) {
+                    if let Some(msg) = json
+                        .get(key)
+                        .and_then(|v| v.get("message"))
+                        .and_then(|m| m.as_str())
+                    {
                         return msg.to_string();
                     }
                 }
@@ -224,10 +237,7 @@ pub fn parse_extension_manifest(
         let full = dir.join(rel);
         if full.exists() {
             fs::read(&full).ok().map(|bytes| {
-                let ext = full
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("png");
+                let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("png");
                 let mime = match ext {
                     "svg" => "image/svg+xml",
                     "jpg" | "jpeg" => "image/jpeg",
@@ -255,6 +265,7 @@ pub fn parse_extension_manifest(
         options_page,
         popup_page,
         homepage_url,
+        runtime_id: None,
     })
 }
 
@@ -436,7 +447,8 @@ mod tests {
     #[test]
     fn test_url_normalization() {
         let chrome_url = "https://chromewebstore.google.com/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm";
-        let (id, source) = normalize_extension_id(chrome_url).expect("Should parse chrome webstore URL");
+        let (id, source) =
+            normalize_extension_id(chrome_url).expect("Should parse chrome webstore URL");
         assert_eq!(id, "cjpalhdlnbpafiamejdnhcphjbkeiagm");
         assert_eq!(source, "chrome");
 
@@ -468,8 +480,13 @@ mod tests {
     #[test]
     fn test_download_real_extension() {
         // Test downloading dark reader from Chrome Web Store
-        let info = download_and_install_extension("eimadpbcbfnmbkopoojfekhnkhdbieeh", Some("chrome"));
-        assert!(info.is_ok(), "Failed to download Dark Reader: {:?}", info.err());
+        let info =
+            download_and_install_extension("eimadpbcbfnmbkopoojfekhnkhdbieeh", Some("chrome"));
+        assert!(
+            info.is_ok(),
+            "Failed to download Dark Reader: {:?}",
+            info.err()
+        );
         let info = info.unwrap();
         assert_eq!(info.id, "eimadpbcbfnmbkopoojfekhnkhdbieeh");
         assert!(!info.name.is_empty());
@@ -478,8 +495,13 @@ mod tests {
     #[test]
     fn test_download_and_verify_ublock_origin() {
         // uBlock Origin Lite
-        let info = download_and_install_extension("ddkjiahejlhfcafbddmgiahcphecmpfh", Some("chrome"));
-        assert!(info.is_ok(), "Failed to download uBlock Origin Lite: {:?}", info.err());
+        let info =
+            download_and_install_extension("ddkjiahejlhfcafbddmgiahcphecmpfh", Some("chrome"));
+        assert!(
+            info.is_ok(),
+            "Failed to download uBlock Origin Lite: {:?}",
+            info.err()
+        );
         let info = info.unwrap();
         assert_eq!(info.id, "ddkjiahejlhfcafbddmgiahcphecmpfh");
         assert!(info.name.contains("uBlock") || info.name.contains("uBO"));
@@ -489,8 +511,13 @@ mod tests {
     #[test]
     fn test_download_and_verify_bitwarden() {
         // Bitwarden Password Manager
-        let info = download_and_install_extension("nngceckbapebfimnlniiiahkandclblb", Some("chrome"));
-        assert!(info.is_ok(), "Failed to download Bitwarden: {:?}", info.err());
+        let info =
+            download_and_install_extension("nngceckbapebfimnlniiiahkandclblb", Some("chrome"));
+        assert!(
+            info.is_ok(),
+            "Failed to download Bitwarden: {:?}",
+            info.err()
+        );
         let info = info.unwrap();
         assert_eq!(info.id, "nngceckbapebfimnlniiiahkandclblb");
         assert!(info.name.contains("Bitwarden"));

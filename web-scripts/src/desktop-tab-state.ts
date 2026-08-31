@@ -87,6 +87,10 @@ declare const __TITAN_DESKTOP_TAB_STATE_CONFIG__: TitanDesktopTabStateConfig;
         }
     }, true);
 
+    window.addEventListener('pointerdown', () => {
+        postCommand({ type: 'CloseExtensionPopup' });
+    }, true);
+
     window.addEventListener('popstate', notify);
     window.addEventListener('load', notify);
     document.addEventListener('visibilitychange', notify);

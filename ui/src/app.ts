@@ -193,57 +193,31 @@
     });
   }
 
-  // Render Extensions Dropdown
-  function renderExtensionsDropdown() {
-    if (!extensionsDropdownList) return;
-    extensionsDropdownList.innerHTML = '';
+  function getExtensionPopupAnchor(anchorElement?: Element | null): ExtensionPopupAnchor | undefined {
+    const rect = anchorElement?.getBoundingClientRect();
+    if (!rect) return undefined;
+    return {
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
 
-    const exts = state.extensions || [];
-    if (exts.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'ext-drop-empty';
-      empty.textContent = 'No extensions installed yet. Click "Manage" to install from Chrome Web Store or Edge Add-ons.';
-      extensionsDropdownList.appendChild(empty);
-      return;
+  function closeExtensionPopup() {
+    sendIpc({ type: 'CloseExtensionPopup' });
+  }
+
+  function openExtensionSurface(ext: ExtensionInfo, anchorElement?: Element | null) {
+    const anchor = getExtensionPopupAnchor(anchorElement);
+    closeExtensionsDropdown(true);
+    if (ext.enabled && ext.popup_page) {
+      sendIpc({ type: 'OpenExtensionPopup', id: ext.id, anchor });
+    } else if (ext.options_page) {
+      sendIpc({ type: 'OpenExtensionOptions', id: ext.id });
+    } else {
+      sendIpc({ type: 'OpenExtensions' });
     }
-
-    exts.forEach((ext) => {
-      const item = document.createElement('div');
-      item.className = 'ext-drop-item';
-      item.title = `${ext.name} (v${ext.version})\n${ext.description || ''}`;
-
-      const icon = document.createElement('img');
-      icon.className = 'ext-drop-icon';
-      icon.src = ext.icon || 'data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" fill="none" stroke="%234e7cf6" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>';
-
-      const info = document.createElement('div');
-      info.className = 'ext-drop-info';
-
-      const name = document.createElement('div');
-      name.className = 'ext-drop-name';
-      name.textContent = ext.name;
-
-      const ver = document.createElement('div');
-      ver.className = 'ext-drop-ver';
-      ver.textContent = `v${ext.version} · ${ext.enabled ? 'Enabled' : 'Disabled'}`;
-
-      info.appendChild(name);
-      info.appendChild(ver);
-
-      item.appendChild(icon);
-      item.appendChild(info);
-
-      item.addEventListener('click', () => {
-        if (extensionsDropdown) extensionsDropdown.style.display = 'none';
-        if (ext.options_page) {
-          sendIpc({ type: 'OpenExtensionOptions', id: ext.id });
-        } else {
-          sendIpc({ type: 'OpenExtensions' });
-        }
-      });
-
-      extensionsDropdownList.appendChild(item);
-    });
   }
 
   // Update Navigation Bar State
@@ -296,6 +270,10 @@
   }
 
   let isExtensionDropdownOpen = false;
+  let pendingExtensionsDropdownTimer: number | undefined;
+  const EXTENSIONS_DROPDOWN_READY_HEIGHT = 400;
+  const EXTENSIONS_DROPDOWN_OPEN_TIMEOUT_MS = 350;
+  const EXTENSIONS_DROPDOWN_POLL_MS = 16;
 
   function getActiveDomain(): string {
     const activeTab = getActiveTab();
@@ -310,31 +288,60 @@
 
   function openExtensionsDropdown(focusedExtensionId?: string) {
     if (!extensionsDropdown) return;
-    isExtensionDropdownOpen = true;
-    extensionsDropdown.style.display = 'flex';
-    sendIpc({ type: 'SetHeaderExpanded', expanded: true });
-
     const extensions = state.extensions || [];
     if (focusedExtensionId) {
       const ext = extensions.find((e) => e.id === focusedExtensionId);
       if (ext) {
-        renderExtensionDetailView(ext);
+        openExtensionSurface(ext, extensionsBtn);
         return;
       }
     }
-    renderExtensionsDropdownList();
+
+    if (pendingExtensionsDropdownTimer !== undefined) {
+      window.clearTimeout(pendingExtensionsDropdownTimer);
+    }
+
+    closeExtensionPopup();
+    sendIpc({ type: 'SetHeaderExpanded', expanded: true });
+    const startedAt = performance.now();
+    const showWhenHeaderIsExpanded = () => {
+      const headerIsReady = window.innerHeight >= EXTENSIONS_DROPDOWN_READY_HEIGHT;
+      const timedOut = performance.now() - startedAt >= EXTENSIONS_DROPDOWN_OPEN_TIMEOUT_MS;
+      if (!headerIsReady && !timedOut) {
+        pendingExtensionsDropdownTimer = window.setTimeout(
+          showWhenHeaderIsExpanded,
+          EXTENSIONS_DROPDOWN_POLL_MS
+        );
+        return;
+      }
+
+      isExtensionDropdownOpen = true;
+      extensionsDropdown.style.display = 'flex';
+      renderExtensionsDropdownList();
+      pendingExtensionsDropdownTimer = undefined;
+    };
+    pendingExtensionsDropdownTimer = window.setTimeout(
+      showWhenHeaderIsExpanded,
+      EXTENSIONS_DROPDOWN_POLL_MS
+    );
   }
 
-  function closeExtensionsDropdown() {
-    if (!extensionsDropdown || !isExtensionDropdownOpen) return;
+  function closeExtensionsDropdown(force = false) {
+    if (pendingExtensionsDropdownTimer !== undefined) {
+      window.clearTimeout(pendingExtensionsDropdownTimer);
+      pendingExtensionsDropdownTimer = undefined;
+    }
+    if (!extensionsDropdown || (!isExtensionDropdownOpen && !force)) return;
     isExtensionDropdownOpen = false;
     extensionsDropdown.style.display = 'none';
+    if (extensionsDropdownList) extensionsDropdownList.style.display = 'flex';
+    if (extensionDetailView) extensionDetailView.style.display = 'none';
     sendIpc({ type: 'SetHeaderExpanded', expanded: false });
   }
 
   function toggleExtensionsDropdown() {
-    if (isExtensionDropdownOpen) {
-      closeExtensionsDropdown();
+    if (isExtensionDropdownOpen || pendingExtensionsDropdownTimer !== undefined) {
+      closeExtensionsDropdown(true);
     } else {
       openExtensionsDropdown();
     }
@@ -385,7 +392,7 @@
 
       item.addEventListener('click', (e) => {
         e.stopPropagation();
-        renderExtensionDetailView(ext);
+        openExtensionSurface(ext, extensionsBtn || item);
       });
 
       extensionsDropdownList.appendChild(item);
@@ -538,7 +545,7 @@
       optBtn.innerHTML = `⚙️ Open Dashboard / Options`;
       optBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        closeExtensionsDropdown();
+        closeExtensionsDropdown(true);
         sendIpc({ type: 'OpenExtensionOptions', id: ext.id });
       });
       actions.appendChild(optBtn);
@@ -549,7 +556,7 @@
     manageBtn.innerHTML = `🧩 Manage in Settings`;
     manageBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      closeExtensionsDropdown();
+      closeExtensionsDropdown(true);
       sendIpc({ type: 'OpenExtensions' });
     });
     actions.appendChild(manageBtn);
@@ -573,7 +580,7 @@
       btn.appendChild(iconImg);
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        openExtensionsDropdown(ext.id);
+        openExtensionSurface(ext, btn);
       });
       toolbarExtensionsList.appendChild(btn);
     });
@@ -622,29 +629,32 @@
   if (closeExtDropdownBtn) {
     closeExtDropdownBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      closeExtensionsDropdown();
+      closeExtensionsDropdown(true);
     });
   }
 
   if (manageExtensionsBtn) {
     manageExtensionsBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      closeExtensionsDropdown();
+      closeExtensionsDropdown(true);
       sendIpc({ type: 'OpenExtensions' });
     });
   }
 
   // Close dropdown on click outside
   window.addEventListener('click', (e) => {
-    if (!isExtensionDropdownOpen) return;
     const target = e.target as HTMLElement | null;
+    if (target && !target.closest('.toolbar-ext-btn')) {
+      closeExtensionPopup();
+    }
+    if (!isExtensionDropdownOpen) return;
     if (
       target &&
       !target.closest('#extensionsDropdown') &&
       !target.closest('#extensionsBtn') &&
       !target.closest('.toolbar-ext-btn')
     ) {
-      closeExtensionsDropdown();
+      closeExtensionsDropdown(true);
     }
   });
 
@@ -799,12 +809,15 @@
       state.activeTabId = newState.active_tab_id;
       state.active_tab_id = newState.active_tab_id;
     }
+    window.__TITAN_BROWSER_STATE__ = state;
     if (state.settings) {
       applyTheme(state.settings.theme, state.settings.accent_color);
     }
     renderTabs();
     renderBookmarks();
-    renderExtensionsDropdown();
+    if (isExtensionDropdownOpen) {
+      renderExtensionsDropdownList();
+    }
     updateNav();
   };
 

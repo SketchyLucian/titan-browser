@@ -95,6 +95,14 @@ interface ExtensionInfo {
   options_page?: string | null;
   popup_page?: string | null;
   homepage_url?: string | null;
+  runtime_id?: string | null;
+}
+
+interface ExtensionPopupAnchor {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 interface BrowserState {
@@ -177,7 +185,8 @@ type IpcOutMessage =
   | { type: 'ToggleExtension'; id: string; enabled: boolean }
   | { type: 'LoadUnpackedExtension'; path: string }
   | { type: 'OpenExtensionOptions'; id: string }
-  | { type: 'OpenExtensionPopup'; id: string }
+  | { type: 'OpenExtensionPopup'; id: string; anchor?: ExtensionPopupAnchor }
+  | { type: 'CloseExtensionPopup' }
   | { type: 'SetHeaderExpanded'; expanded: boolean }
   | { type: 'OpenHistory' }
   | { type: 'ClearHistory' }
@@ -196,6 +205,7 @@ interface Window {
   ipc?: {
     postMessage: (msg: string) => void;
   };
+  __TITAN_BROWSER_STATE__?: BrowserState;
   updateBrowserState?: (state: BrowserState) => void;
   onBrowserState?: (state: Partial<BrowserState>) => void;
   onTabUpdate?: (tabUpdate: Partial<Tab> & { id: number }) => void;

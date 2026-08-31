@@ -127,19 +127,39 @@ try {
   console.log('2. Installing Bitwarden Password Manager via live IPC...');
   await header.evaluate(`window.ipc.postMessage(JSON.stringify({ type: 'InstallExtension', id_or_url: 'nngceckbapebfimnlniiiahkandclblb', source: 'chrome' }))`);
 
+  console.log('3. Installing Dark Reader via live IPC...');
+  await header.evaluate(`window.ipc.postMessage(JSON.stringify({ type: 'InstallExtension', id_or_url: 'eimadpbcbfnmbkopoojfekhnkhdbieeh', source: 'chrome' }))`);
+
   // Open extensions manager page via IPC
-  await wait(3000);
+  await wait(5000);
   await header.evaluate("window.ipc.postMessage(JSON.stringify({ type: 'OpenExtensions' }))");
 
   const settingsTarget = await waitFor(
-    listTargets,
-    (targets) => targets.some((target) => (target.title || '').includes('Settings')),
+    async () => {
+      const targets = await listTargets();
+      for (const target of targets) {
+        if (target.type !== 'page') continue;
+        if ((target.title || '').includes('Settings')) return target;
+        if ((target.title || '') === 'Titan Browser' || target.url === testUrl) continue;
+        const page = await connect(target);
+        try {
+          const isSettingsPage = await page.evaluate(`
+            document.title.includes('Settings') || !!document.querySelector('.settings-container')
+          `);
+          if (isSettingsPage) return target;
+        } finally {
+          page.close();
+        }
+      }
+      return null;
+    },
+    (target) => !!target,
     'settings extensions tab'
-  ).then((targets) => targets.find((target) => (target.title || '').includes('Settings')));
+  );
 
   const settings = await connect(settingsTarget);
 
-  // Check that both uBlock Origin and Bitwarden are recognized and listed
+  // Check that installed extensions are recognized and listed
   const extensionCards = await waitFor(
     () => settings.evaluate(`
       Array.from(document.querySelectorAll('.ext-card')).map(card => ({
@@ -148,37 +168,305 @@ try {
         enabled: card.querySelector('input[type="checkbox"]')?.checked,
       }))
     `),
-    (cards) => cards.length >= 2,
-    '2 extension cards rendered in settings'
+    (cards) => cards.length >= 3,
+    '3 extension cards rendered in settings'
   );
 
   console.log('Detected extension cards in Titan Browser:', JSON.stringify(extensionCards, null, 2));
 
   const hasUblock = extensionCards.some((c) => (c.name || '').toLowerCase().includes('ublock') || (c.name || '').toLowerCase().includes('ubo'));
   const hasBitwarden = extensionCards.some((c) => (c.name || '').toLowerCase().includes('bitwarden'));
+  const hasDarkReader = extensionCards.some((c) => (c.name || '').toLowerCase().includes('dark reader'));
 
-  console.log('3. Testing opening extension popup UI tab...');
-  await header.evaluate("window.ipc.postMessage(JSON.stringify({ type: 'OpenExtensionPopup', id: 'ddkjiahejlhfcafbddmgiahcphecmpfh' }))");
+  const isOnboardingUrl = (url) =>
+    /^https:\/\/bitwarden\.com\/browser-start\/?/i.test(url || '') ||
+    /^https:\/\/darkreader\.org\/help\//i.test(url || '');
 
-  const extTabTarget = await waitFor(
-    listTargets,
-    (targets) => targets.some((target) => (target.url || '').startsWith('chrome-extension://')),
-    'extension popup tab'
-  ).then((targets) => targets.find((target) => (target.url || '').startsWith('chrome-extension://')));
-
-  console.log('Opened extension UI target:', extTabTarget.url);
-
-  if (extTabTarget.url.includes('google.com/search')) {
-    throw new Error(`Extension UI redirected to Google Search: ${extTabTarget.url}`);
+  async function closeExtensionOnboardingTabs() {
+    await waitFor(
+      () => header.evaluate(`(() => {
+        const tabs = window.__TITAN_BROWSER_STATE__?.tabs || [];
+        for (const tab of tabs) {
+          if (
+            /^https:\\/\\/bitwarden\\.com\\/browser-start\\/?/i.test(tab.url || '') ||
+            /^https:\\/\\/darkreader\\.org\\/help\\//i.test(tab.url || '')
+          ) {
+            window.ipc.postMessage(JSON.stringify({ type: 'CloseTab', tab_id: tab.id }));
+          }
+        }
+        return tabs.map((tab) => ({ id: tab.id, url: tab.url }));
+      })()`),
+      (tabs) => tabs.every((tab) => !isOnboardingUrl(tab.url)),
+      'extension onboarding tabs closed',
+      10_000
+    );
+    await wait(300);
   }
+
+  async function readTabState() {
+    return header.evaluate(`({
+      activeId: window.__TITAN_BROWSER_STATE__?.activeTabId ?? window.__TITAN_BROWSER_STATE__?.active_tab_id,
+      count: window.__TITAN_BROWSER_STATE__?.tabs?.length ?? 0,
+      urls: window.__TITAN_BROWSER_STATE__?.tabs?.map((tab) => tab.url) ?? []
+    })`);
+  }
+
+  function assertNoDelayedViewportRebound(label, samples, dimension) {
+    let lowWaterMark = samples[0]?.[dimension] ?? 0;
+    let sawShrink = false;
+    for (const sample of samples) {
+      const value = sample[dimension];
+      if (value < lowWaterMark - 4) {
+        lowWaterMark = value;
+        sawShrink = true;
+      } else if (sawShrink && value > lowWaterMark + 4) {
+        throw new Error(
+          `${label} popup ${dimension} rebounded after shrinking: ${JSON.stringify(samples)}`
+        );
+      }
+    }
+  }
+
+  async function assertAnchoredExtensionPopup({ storeId, titlePattern, label, textPattern, minWidth = 240, maxWidth = 360 }) {
+    console.log(`4. Testing ${label} anchored extension popup UI...`);
+    await closeExtensionOnboardingTabs();
+    const storeIdLiteral = JSON.stringify(storeId);
+    const metadata = await waitFor(
+      () => header.evaluate(`
+      window.__TITAN_BROWSER_STATE__?.extensions
+        ?.find((ext) => ext.id === ${storeIdLiteral} || ext.runtime_id === ${storeIdLiteral})
+    `),
+      (ext) => ext && ext.popup_page && (ext.runtime_id || ext.id),
+      `${label} extension runtime metadata`
+    );
+    const runtimeId = metadata.runtime_id || metadata.id;
+    const expectedPopupUrl = `chrome-extension://${runtimeId}/${metadata.popup_page.replace(/^\/+/, '')}`;
+    const titlePatternLiteral = JSON.stringify(titlePattern);
+
+    await header.evaluate(`
+      (() => {
+        const titlePattern = new RegExp(${titlePatternLiteral}, 'i');
+        const button = Array.from(document.querySelectorAll('.toolbar-ext-btn'))
+          .find((button) => titlePattern.test(button.title || ''));
+        if (!button) throw new Error('Toolbar button not found for ${label}');
+        button.click();
+      })()
+    `);
+
+    const headerSurface = await waitFor(
+      () => header.evaluate(`({
+        dropdownDisplay: getComputedStyle(document.getElementById('extensionsDropdown')).display,
+        headerHeight: window.innerHeight
+      })`),
+      (surface) => surface.dropdownDisplay === 'none' && surface.headerHeight <= 85,
+      `${label} dropdown dismissed while popup opens`,
+      10_000
+    );
+
+    const popupTarget = await waitFor(
+      listTargets,
+      (targets) => targets.some((target) => target.url === expectedPopupUrl),
+      `${label} extension popup WebView`
+    ).then((targets) => targets.find((target) => target.url === expectedPopupUrl));
+
+    console.log(`Opened ${label} extension UI target:`, popupTarget.url);
+
+    const tabStateAfterPopup = await readTabState();
+    const popupCreatedTitanTab = tabStateAfterPopup.urls.includes(expectedPopupUrl);
+
+    if (popupCreatedTitanTab) {
+      throw new Error(`${label} popup opened as a Titan tab instead of an anchored popup: ${JSON.stringify(tabStateAfterPopup)}`);
+    }
+
+    const extensionPopup = await connect(popupTarget);
+    const expectedTextPattern = new RegExp(textPattern, 'i');
+    const popupDocument = await waitFor(
+      () => extensionPopup.evaluate(`({
+        href: window.location.href,
+        readyState: document.readyState,
+        elementCount: document.body?.querySelectorAll('*').length || 0,
+        text: document.body?.innerText?.slice(0, 240) || ''
+      })`),
+      (documentState) =>
+        (documentState.href === expectedPopupUrl || documentState.href.startsWith(`${expectedPopupUrl}#`)) &&
+        documentState.readyState !== 'loading' &&
+        documentState.elementCount > 0 &&
+        expectedTextPattern.test(documentState.text),
+      `${label} extension popup document`
+    );
+
+    if (/ERR_|can't be reached|not found/i.test(popupDocument.text)) {
+      throw new Error(`${label} popup rendered an error page: ${popupDocument.text}`);
+    }
+
+    const readPopupViewport = () =>
+      extensionPopup.evaluate(`({
+        width: window.innerWidth,
+        height: window.innerHeight
+      })`);
+    const popupViewportState = await waitFor(
+      async () => {
+        const first = await readPopupViewport();
+        await wait(350);
+        const second = await readPopupViewport();
+        return {
+          width: second.width,
+          height: second.height,
+          widthDelta: Math.abs(second.width - first.width),
+          heightDelta: Math.abs(second.height - first.height),
+        };
+      },
+      (viewport) =>
+        viewport.width >= minWidth &&
+        viewport.width < maxWidth &&
+        viewport.widthDelta < 4 &&
+        viewport.heightDelta < 4,
+      `${label} stable extension popup viewport`,
+      12_000
+    );
+    const viewportSamples = [
+      { width: popupViewportState.width, height: popupViewportState.height, elapsedMs: 0 },
+    ];
+    const viewportWatchStarted = Date.now();
+    while (Date.now() - viewportWatchStarted < 9_000) {
+      await wait(500);
+      viewportSamples.push({
+        ...(await readPopupViewport()),
+        elapsedMs: Date.now() - viewportWatchStarted,
+      });
+    }
+    assertNoDelayedViewportRebound(label, viewportSamples, 'width');
+    assertNoDelayedViewportRebound(label, viewportSamples, 'height');
+
+    const finalSamples = viewportSamples.slice(-6);
+    const popupViewport = finalSamples.at(-1);
+    if (popupViewport.width < minWidth || popupViewport.width >= maxWidth) {
+      throw new Error(`${label} popup final viewport width was out of range: ${JSON.stringify(viewportSamples)}`);
+    }
+    const widthRange = Math.max(...finalSamples.map((sample) => sample.width)) - Math.min(...finalSamples.map((sample) => sample.width));
+    const heightRange = Math.max(...finalSamples.map((sample) => sample.height)) - Math.min(...finalSamples.map((sample) => sample.height));
+    if (widthRange >= 4 || heightRange >= 4) {
+      throw new Error(`${label} popup viewport did not stay stable after open: ${JSON.stringify(viewportSamples)}`);
+    }
+
+    await header.evaluate("window.ipc.postMessage(JSON.stringify({ type: 'CloseExtensionPopup' }))");
+    extensionPopup.close();
+    await wait(300);
+
+    return {
+      url: popupTarget.url,
+      headerSurface,
+      documentLoaded: popupDocument.elementCount > 0,
+      viewport: popupViewport,
+      viewportStable: true,
+      openedOutsideTabStack: !popupCreatedTitanTab,
+    };
+  }
+
+  async function assertExtensionsDropdownVisibleAfterNativePopup() {
+    console.log('5. Testing Extensions menu replaces an open native popup...');
+    await closeExtensionOnboardingTabs();
+    const bitwardenStoreId = 'nngceckbapebfimnlniiiahkandclblb';
+    const metadata = await waitFor(
+      () => header.evaluate(`
+        window.__TITAN_BROWSER_STATE__?.extensions
+          ?.find((ext) => ext.id === '${bitwardenStoreId}' || ext.runtime_id === '${bitwardenStoreId}')
+      `),
+      (ext) => ext && ext.popup_page && (ext.runtime_id || ext.id),
+      'Bitwarden extension runtime metadata for dropdown replacement'
+    );
+    const runtimeId = metadata.runtime_id || metadata.id;
+    const expectedPopupUrl = `chrome-extension://${runtimeId}/${metadata.popup_page.replace(/^\/+/, '')}`;
+
+    await header.evaluate(`
+      (() => {
+        const button = Array.from(document.querySelectorAll('.toolbar-ext-btn'))
+          .find((button) => /Bitwarden/i.test(button.title || ''));
+        if (!button) throw new Error('Bitwarden toolbar button not found');
+        button.click();
+      })()
+    `);
+    await waitFor(
+      listTargets,
+      (targets) => targets.some((target) => (target.url || '').startsWith(expectedPopupUrl)),
+      'Bitwarden native popup before opening Extensions menu'
+    );
+
+    await header.evaluate("document.getElementById('extensionsBtn')?.click()");
+
+    const surface = await waitFor(
+      () => header.evaluate(`(() => {
+        const dropdown = document.getElementById('extensionsDropdown');
+        const list = document.getElementById('extensionsDropdownList');
+        const body = document.getElementById('extensionsDropdownBody');
+        const dropdownRect = dropdown?.getBoundingClientRect();
+        const bodyRect = body?.getBoundingClientRect();
+        const listRect = list?.getBoundingClientRect();
+        return {
+          dropdownDisplay: dropdown ? getComputedStyle(dropdown).display : '',
+          headerHeight: window.innerHeight,
+          dropdownHeight: dropdownRect?.height || 0,
+          bodyHeight: bodyRect?.height || 0,
+          listHeight: listRect?.height || 0,
+          itemCount: list?.querySelectorAll('.ext-drop-item').length || 0,
+        };
+      })()`),
+      (state) =>
+        state.dropdownDisplay !== 'none' &&
+        state.headerHeight >= 400 &&
+        state.dropdownHeight > 120 &&
+        state.bodyHeight > 60 &&
+        state.listHeight > 60 &&
+        state.itemCount >= 3,
+      'full Extensions dropdown after native popup'
+    );
+    await waitFor(
+      listTargets,
+      (targets) => !targets.some((target) => (target.url || '').startsWith(expectedPopupUrl)),
+      'native extension popup closed when Extensions menu opens',
+      10_000
+    );
+    await header.evaluate("document.getElementById('closeExtDropdownBtn')?.click()");
+    await wait(300);
+
+    return surface;
+  }
+
+  const ublockPopup = await assertAnchoredExtensionPopup({
+    storeId: 'ddkjiahejlhfcafbddmgiahcphecmpfh',
+    titlePattern: 'uBlock|uBO',
+    label: 'uBlock',
+    textPattern: '\\S',
+  });
+  const bitwardenPopup = await assertAnchoredExtensionPopup({
+    storeId: 'nngceckbapebfimnlniiiahkandclblb',
+    titlePattern: 'Bitwarden',
+    label: 'Bitwarden',
+    textPattern: 'bitwarden|Anmelden|Log in',
+    minWidth: 280,
+    maxWidth: 380,
+  });
+  const darkReaderPopup = await assertAnchoredExtensionPopup({
+    storeId: 'eimadpbcbfnmbkopoojfekhnkhdbieeh',
+    titlePattern: 'Dark Reader',
+    label: 'Dark Reader',
+    textPattern: 'Dark Reader',
+    minWidth: 260,
+    maxWidth: 340,
+  });
+  const extensionsDropdownAfterPopup = await assertExtensionsDropdownVisibleAfterNativePopup();
 
   const result = {
     extensionsPageLoaded: true,
     totalExtensions: extensionCards.length,
     ublockOriginPresent: hasUblock,
     bitwardenPresent: hasBitwarden,
+    darkReaderPresent: hasDarkReader,
     allEnabled: extensionCards.every((c) => c.enabled),
-    extensionUiLoadedDirectly: extTabTarget.url.startsWith('chrome-extension://'),
+    ublockPopup,
+    bitwardenPopup,
+    darkReaderPopup,
+    extensionsDropdownAfterPopup,
   };
 
   settings.close();
@@ -186,8 +474,16 @@ try {
 
   console.log('Automated Extension Verification Result:', JSON.stringify(result, null, 2));
 
-  if (!result.ublockOriginPresent || !result.bitwardenPresent || !result.extensionUiLoadedDirectly) {
-    throw new Error('Verification failed: Extension UI did not load directly.');
+  if (
+    !result.ublockOriginPresent ||
+    !result.bitwardenPresent ||
+    !result.darkReaderPresent ||
+    !result.ublockPopup.openedOutsideTabStack ||
+    !result.bitwardenPopup.openedOutsideTabStack ||
+    !result.darkReaderPopup.openedOutsideTabStack ||
+    result.extensionsDropdownAfterPopup.itemCount < 3
+  ) {
+    throw new Error('Verification failed: Extension UI did not load as an anchored popup.');
   }
 
   console.log('✅ End-to-End Extension & Extension UI Verification PASSED!');
